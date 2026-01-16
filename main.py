@@ -1,20 +1,37 @@
+import numpy as np
+from PIL import Image
 from src.vector import Vec3
+from src.ray import Ray
+from src.geometry import Sphere
 
-def test_math():
-    v1 = Vec3(1, 0, 0)
-    v2 = Vec3(0, 1, 0)
+def render():
+    width, height = 400, 200
+    camera_origin = Vec3(0, 0, 0)
+    sphere = Sphere(Vec3(0, 0, -5), 1.0, Vec3(255, 0, 0)) # Esfera roja
+    
+    # Creamos el canvas de la imagen
+    data = np.zeros((height, width, 3), dtype=np.uint8)
 
-    # El producto cruz de X e Y debe ser Z
-    v3 = v1.cross(v2)
-    print(f"Producto cruz (X x Y): {v3}") # Debería ser Vec3(0, 0, 1)
+    for y in range(height):
+        for x in range(width):
+            # Mapeamos coordenadas de pantalla a espacio 3D (-2 a 2 aprox)
+            u = (x / width) * 4 - 2
+            v = -((y / height) * 2 - 1)
+            
+            direction = Vec3(u, v, -1) # Apuntamos hacia adelante
+            ray = Ray(camera_origin, direction)
+            
+            if sphere.hit(ray):
+                data[y, x] = [255, 0, 0] # Pintar de rojo si hay hit
+            else:
+                # Fondo: un degradado azul/blanco simple
+                t_fondo = 0.5 * (ray.direction.y + 1.0)
+                color = Vec3(1, 1, 1) * (1.0 - t_fondo) + Vec3(0.5, 0.7, 1.0) * t_fondo
+                data[y, x] = [int(color.x*255), int(color.y*255), int(color.z*255)]
 
-    # El producto punto de vectores perpendiculares debe ser 0
-    dot_prod = v1.dot(v2)
-    print(f"Producto punto (perpendicular): {dot_prod}")
-
-    # Normalización
-    v4 = Vec3(5, 0, 0)
-    print(f"Normalizado de (5,0,0): {v4.normalize()}") # Debería ser Vec3(1, 0, 0)
+    img = Image.fromarray(data, 'RGB')
+    img.save('output/primera_esfera.png')
+    print("Render finalizado. ¡Mira output/primera_esfera.png!")
 
 if __name__ == "__main__":
-    test_math()
+    render()

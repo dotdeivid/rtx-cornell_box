@@ -1,21 +1,20 @@
-import numpy as np
-from PIL import Image
-import os
+from src.vector import Vec3
 
-def crear_test():
-    # Crear una carpeta para las imágenes si no existe
-    if not os.path.exists('output'):
-        os.makedirs('output')
+def test_math():
+    v1 = Vec3(1, 0, 0)
+    v2 = Vec3(0, 1, 0)
 
-    # Crear una imagen negra de 100x100 (RGB)
-    data = np.zeros((100, 100, 3), dtype=np.uint8)
-    
-    # Dibujar un cuadrado rojo en el centro (Test de NumPy)
-    data[40:60, 40:60] = [255, 0, 0]
-    
-    img = Image.fromarray(data, 'RGB')
-    img.save('output/test_entorno.png')
-    print("¡Entorno listo! Revisa la carpeta output/test_entorno.png")
+    # El producto cruz de X e Y debe ser Z
+    v3 = v1.cross(v2)
+    print(f"Producto cruz (X x Y): {v3}") # Debería ser Vec3(0, 0, 1)
+
+    # El producto punto de vectores perpendiculares debe ser 0
+    dot_prod = v1.dot(v2)
+    print(f"Producto punto (perpendicular): {dot_prod}")
+
+    # Normalización
+    v4 = Vec3(5, 0, 0)
+    print(f"Normalizado de (5,0,0): {v4.normalize()}") # Debería ser Vec3(1, 0, 0)
 
 if __name__ == "__main__":
-    crear_test()
+    test_math()

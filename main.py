@@ -6,14 +6,12 @@ from src.geometry import Sphere
 
 # Nueva función para detectar el choque más cercano en un "mundo" de objetos
 def color_ray(ray, world, depth):
-    # Condición de parada para la recursión (máximo 3 rebotes)
     if depth <= 0:
         return Vec3(0, 0, 0)
 
     closest_hit = None
     dist_min = float('inf')
 
-    # Buscamos qué objeto tocó el rayo primero
     for obj in world:
         rec = obj.hit(ray)
         if rec and rec.t < dist_min:
@@ -21,17 +19,38 @@ def color_ray(ray, world, depth):
             closest_hit = rec
 
     if closest_hit:
-        # --- LÓGICA DE REFLEJO ---
-        # 1. Calculamos la dirección del reflejo
-        reflected_dir = ray.direction - closest_hit.normal * 2 * ray.direction.dot(closest_hit.normal)
+        # --- CONFIGURACIÓN DE LUZ ---
+        light_pos = Vec3(5, 5, 0)
+        light_dir = (light_pos - closest_hit.point).normalize()
         
-        # 2. Creamos el rayo reflejado (ligeramente movido para evitar auto-intersección)
+        # --- CÁLCULO DE SOMBRAS (SHADOW RAY) ---
+        # Movemos el origen un poco (0.001) para evitar el "Shadow Acne"
+        shadow_origin = closest_hit.point + closest_hit.normal * 0.001
+        shadow_ray = Ray(shadow_origin, light_dir)
+        
+        in_shadow = False
+        for obj in world:
+            if obj.hit(shadow_ray):
+                in_shadow = True
+                break
+        
+        # --- ILUMINACIÓN ---
+        if in_shadow:
+            # Si hay sombra, solo queda una luz ambiente tenue
+            intensity = 0.1
+        else:
+            # Si no hay sombra, calculamos Lambert
+            intensity = max(0.1, closest_hit.normal.dot(light_dir))
+
+        # --- REFLEJOS (RAY TRACING RECURSIVO) ---
+        reflected_dir = ray.direction - closest_hit.normal * 2 * ray.direction.dot(closest_hit.normal)
         reflected_ray = Ray(closest_hit.point + closest_hit.normal * 0.001, reflected_dir)
         
-        # 3. RECURSIÓN: El color es (70% reflejo + 30% color propio)
-        return color_ray(reflected_ray, world, depth - 1) * 0.7 + closest_hit.color * 0.3
+        # Color = (Reflejo * factor) + (Color propio * intensidad de luz)
+        reflection_color = color_ray(reflected_ray, world, depth - 1)
+        return reflection_color * 0.4 + closest_hit.color * intensity * 0.6
     
-    # Si no toca nada, devolvemos el fondo
+    # Fondo
     t_fondo = 0.5 * (ray.direction.y + 1.0)
     return Vec3(1, 1, 1) * (1.0 - t_fondo) + Vec3(0.5, 0.7, 1.0) * t_fondo
 
@@ -41,9 +60,9 @@ def render():
     
     # Nuestro "Mundo"
     world = [
-        Sphere(Vec3(0, -100.5, -1), 100, Vec3(200, 200, 200)), # Piso gris
-        Sphere(Vec3(0, 0, -3), 1.0, Vec3(255, 50, 50)),       # Esfera central roja
-        Sphere(Vec3(2, 0, -4), 1.0, Vec3(50, 255, 50))        # Esfera lateral verde
+        Sphere(Vec3(0, -100.5, -1), 100, Vec3(200, 200, 200)),# Piso grande
+        Sphere(Vec3(0, 0.9, -3), 1.0, Vec3(255, 50, 50)),     # Esfera roja flotando
+        Sphere(Vec3(2, 0.3, -4), 0.8, Vec3(50, 255, 50))      # Esfera verde al fondo
     ]
     
     data = np.zeros((height, width, 3), dtype=np.uint8)

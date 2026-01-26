@@ -146,23 +146,35 @@ def render_row(y, width, height, samples, depth, world, camera_origin):
     Esta función es la que se distribuirá entre los núcleos.
     """
     row_pixels = []
+    # Calculamos la raíz de las muestras para crear una cuadrícula (ej: sqrt(100) = 10)
+    s_side = int(math.sqrt(samples))
+
+
     for x in range(width):
         col = Vec3(0, 0, 0)
-        for _ in range(samples):
-            # Antialiasing: lanzamos rayos con un pequeño offset aleatorio
-            u = ((x + random.random()) / width) * 4 - 2
-            v = -(((y + random.random()) / height) * 2 - 1)
+        
+        # Bucle de Antialiasing Estratificado (Cuadrícula)
+        for i in range(s_side):
+            for j in range(s_side):
+                # Dividimos el píxel en sub-celdas y lanzamos un rayo en cada una
+                u_offset = (i + random.random()) / s_side
+                v_offset = (j + random.random()) / s_side
+                
+                u = ((x + u_offset) / width) * 4 - 2
+                v = -(((y + v_offset) / height) * 2 - 1)
 
-            ray = Ray(camera_origin, Vec3(u, v, -1))
-            col = col + color_ray(ray, world, depth)
+                ray = Ray(camera_origin, Vec3(u, v, -1))
+                col = col + color_ray(ray, world, depth)
 
-        # Promediamos, aplicamos corrección gamma para que no sea tan oscuro (sqrt) y escalamos a 255
-        pixel_color = col / samples
+        # Promediamos por el total real de muestras (s_side * s_side)
+        pixel_color = col / (s_side * s_side)
+
         # Corrección gamma y escalado a 255
         r = min(255, int(255.99 * math.sqrt(pixel_color.x)))
         g = min(255, int(255.99 * math.sqrt(pixel_color.y)))
         b = min(255, int(255.99 * math.sqrt(pixel_color.z)))
         row_pixels.append([r, g, b])
+
     return row_pixels
 
 
@@ -208,9 +220,10 @@ def render():
             row_data = render_row(y, width, height, samples, depth, world, camera_origin)
             data[y] = row_data
 
-    Image.fromarray(data).save("output/dielectric.png")
-    print("\n¡Render finalizado con Vidrio!")
+    Image.fromarray(data).save("output/antialiasing.png")
+    print("\n¡Render finalizado con Antialiasing!")
 
 
 if __name__ == "__main__":
     render()
+

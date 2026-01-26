@@ -9,53 +9,37 @@ import random
 
 
 def calculate_nee(rec, world):
-    """
-    Calcula la iluminación directa muestreando las fuentes de luz.
-    """
     direct_light = Vec3(0, 0, 0)
-    # Identificamos qué objetos emiten luz
     lights = [obj for obj in world if obj.emission.length() > 0]
-
+    
     for light in lights:
-        # 1. Muestreo: Elegimos un punto en la lámpara
-        p_light = light.random_point_on_surface()
-        l_vector = p_light - rec.point
-        dist_sq = l_vector.dot(l_vector)
-        dist = math.sqrt(dist_sq)
-        l_dir = l_vector.normalize()
-
-        # 2. Shadow Ray: ¿Hay algo entre el objeto y la luz?
-        # Offset 0.001 para evitar "shadow acne"
+        # 1. Obtenemos dirección y el ángulo sólido que ocupa la luz
+        l_dir, solid_angle = light.sample_solid_angle(rec.point)
+        
+        # 2. Shadow Ray: Verificamos visibilidad
         shadow_ray = Ray(rec.point + rec.normal * 0.001, l_dir)
-
-        visible = True
+        
+        # Verificamos si golpeamos la luz directamente sin obstáculos
+        # (Optimizamos: solo nos importa si el primer hit es la luz)
+        hit_light = None
+        min_t = float('inf')
         for obj in world:
-            # Si algo choca antes de llegar a la luz, está en sombra
             h = obj.hit(shadow_ray)
-            if h and h.t < (dist - 0.001):
-                visible = False
-                break
-
-        if visible:
-            # --- CÁLCULO DE ATENUACIÓN FÍSICA ---
-            # 1. Coseno en el objeto (Ley de Lambert)
+            if h and h.t < min_t:
+                min_t = h.t
+                hit_light = obj
+        
+        if hit_light == light:
+            # 3. Cálculo de Iluminancia
+            # cos_theta: Cuánta luz recibe la superficie según su inclinación
             cos_theta = max(0, rec.normal.dot(l_dir))
-
-            # 2. Coseno en la fuente de luz (Importante para esferas/áreas)
-            light_normal = (p_light - light.center) / light.radius
-            cos_theta_light = max(0, light_normal.dot(l_dir * -1))
-
-            # 3. PDF y Área
-            area_light = 4 * math.pi * (light.radius ** 2)
-            pdf = 1.0 / area_light
-
-            # Fórmula final de luz directa
-            # (Emisión * ColorObj * Geometría) / PDF
-            geometry_term = (cos_theta * cos_theta_light) / dist_sq
-            direct_light = direct_light + (light.emission * rec.color * geometry_term / pdf)
-
+            
+            # Con Muestreo de Ángulo Sólido, la fórmula es:
+            # Luz = Emisión * Color * cos(theta) * (Ángulo Sólido / PI)
+            # El PI viene de la normalización del material difuso (Lambert)
+            direct_light = direct_light + (light.emission * rec.color * (cos_theta * solid_angle / math.pi))
+            
     return direct_light
-
 
 def color_ray(ray, world, depth, is_primary_ray=True):
     if depth <= 0:
@@ -135,7 +119,7 @@ def render():
                 min(255, int(255.99 * math.sqrt(pixel_color.z))),
             ]
 
-    Image.fromarray(data).save("output/nee.png")
+    Image.fromarray(data).save("output/solid_cone.png")
     print("\n¡Render finalizado con Luz de Área!")
 
 

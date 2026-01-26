@@ -59,19 +59,29 @@ def color_ray(ray, world, depth, is_primary_ray=True):
         if closest_hit.emission.length() > 0:
             return closest_hit.emission if is_primary_ray else Vec3(0, 0, 0)
 
-        # A. LUZ DIRECTA (NEE)
-        luz_directa = calculate_nee(closest_hit, world)
+        if closest_hit.is_metal:
+            # --- LÓGICA DE METAL ---
+            # El rayo rebota perfectamente como un espejo
+            reflected_direction = ray.direction.reflect(closest_hit.normal)
+            # Añadimos un pequeño margen (0.001) para evitar que el rayo choque con la misma esfera
+            scattered_ray = Ray(closest_hit.point + closest_hit.normal * 0.001, reflected_direction)
+            
+            # El metal multiplica el color de lo que refleja por su propio color
+            return color_ray(scattered_ray, world, depth - 1, False) * closest_hit.color
+        else:
+            # A. LUZ DIRECTA (NEE)
+            luz_directa = calculate_nee(closest_hit, world)
 
-        # B. LUZ INDIRECTA (Rebote aleatorio)
-        target = closest_hit.point + generar_direccion_aleatoria(closest_hit.normal)
-        new_ray = Ray(
-            closest_hit.point + closest_hit.normal * 0.001, target - closest_hit.point
-        )
+            # B. LUZ INDIRECTA (Rebote aleatorio)
+            target = closest_hit.point + generar_direccion_aleatoria(closest_hit.normal)
+            new_ray = Ray(
+                closest_hit.point + closest_hit.normal * 0.001, target - closest_hit.point
+            )
 
-        # IMPORTANTE: is_primary_ray=False para que los rebotes no vuelvan a sumar la luz
-        luz_indirecta = color_ray(new_ray, world, depth - 1, False) * closest_hit.color
+            # IMPORTANTE: is_primary_ray=False para que los rebotes no vuelvan a sumar la luz
+            luz_indirecta = color_ray(new_ray, world, depth - 1, False) * closest_hit.color
 
-        return luz_directa + luz_indirecta
+            return luz_directa + luz_indirecta
 
     # Fondo (Cielo)
     if ray.direction.y > 0.8:
@@ -87,14 +97,12 @@ def render():
 
     # Nuestro "Mundo"
     world = [
-        Sphere(
-            Vec3(0, -100.5, -1), 100, Vec3(0.8, 0.8, 0.8)
-        ),  # Piso gris oscuro (80% de reflexión)
-        Sphere(Vec3(-0.6, 0, -1.2), 0.5, Vec3(1.0, 0.1, 0.1)),  # ESFERA ROJA (Mate)
-        Sphere(Vec3(0.6, 0, -1.2), 0.5, Vec3(0.1, 1.0, 0.1)),  # ESFERA VERDE (Mate)
+        Sphere(Vec3(0, -100.5, -1), 100, Vec3(0.8, 0.8, 0.8)), # Piso gris oscuro (80% de reflexión)
+        Sphere(Vec3(-0.6, 0, -1.2), 0.5, Vec3(1.0, 1.0, 1.0), is_metal=True), # Esfera de Metal roja (is_metal=True)
+        Sphere(Vec3(0.6, 0, -1.2), 0.5, Vec3(0.1, 1.0, 0.1)), # Esfera Verde Mate
         # LA LUZ DE ÁREA (Una esfera blanca muy brillante arriba)
         # El color es Vec3(15, 15, 15) para que ilumine la escena
-        Sphere(Vec3(0, 3, -1), 1.5, Vec3(0, 0, 0), emission=Vec3(15, 15, 15)),
+        Sphere(Vec3(0, 3, -1), 1.5, Vec3(0, 0, 0), emission=Vec3(15, 15, 15)), # Luz
     ]
 
     data = np.zeros((height, width, 3), dtype=np.uint8)
@@ -119,7 +127,7 @@ def render():
                 min(255, int(255.99 * math.sqrt(pixel_color.z))),
             ]
 
-    Image.fromarray(data).save("output/solid_cone.png")
+    Image.fromarray(data).save("output/specular_reflection.png")
     print("\n¡Render finalizado con Luz de Área!")
 
 

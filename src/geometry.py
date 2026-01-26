@@ -5,23 +5,25 @@ from src.ray import Ray
 
 
 class HitRecord:
-    def __init__(self, t, point, normal, color, emission, is_metal=False):
+    def __init__(self, t, point, normal, color, emission, is_metal=False, fuzz=0.0):
         self.t = t
         self.point = point
         self.normal = normal
         self.color = color
         self.emission = emission
         self.is_metal = is_metal
+        self.fuzz = fuzz
 
 
 class Sphere:
-    def __init__(self, center: Vec3, radius: float, color: Vec3, emission=None, is_metal=False,):
+    def __init__(self, center: Vec3, radius: float, color: Vec3, emission=None, is_metal=False, fuzz=0.0):
         self.center = center
         self.radius = radius
         self.color = color
         # Si no se define, la esfera no emite luz (Vec3(0,0,0))
         self.emission = emission if emission else Vec3(0, 0, 0)
         self.is_metal = is_metal
+        self.fuzz = fuzz if fuzz <= 1.0 else 1.0 # Limitamos a 1.0
 
     def hit(self, ray: Ray):
         """
@@ -44,7 +46,7 @@ class Sphere:
             point = ray.point_at(t)
             # Calculamos la normal y la normalizamos
             normal = (point - self.center) / self.radius
-            return HitRecord(t, point, normal, self.color, self.emission, self.is_metal)
+            return HitRecord(t, point, normal, self.color, self.emission, self.is_metal, self.fuzz)
 
         return None
 

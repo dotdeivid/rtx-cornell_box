@@ -54,3 +54,7 @@ class Vec3:
 
     def __repr__(self):
         return f"Vec3({self.x}, {self.y}, {self.z})"
+
+    def reflect(self, normal):
+        """Calcula el vector de reflexión especular."""
+        return self - normal * (2 * self.dot(normal))

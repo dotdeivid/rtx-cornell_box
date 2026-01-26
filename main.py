@@ -13,6 +13,19 @@ from functools import partial
 USE_PARALLEL = True  # Cámbialo a False para usar un solo núcleo
 # --------------------
 
+# --- FUNCIONES MATEMÁTICAS PARA VIDRIO ---
+def refract(uv, n, etai_over_etat):
+    """Calcula el vector de refracción usando la Ley de Snell."""
+    cos_theta = min((uv * -1).dot(n), 1.0)
+    r_out_perp = (uv + n * cos_theta) * etai_over_etat
+    r_out_parallel = n * -math.sqrt(abs(1.0 - r_out_perp.length()**2))
+    return r_out_perp + r_out_parallel
+
+def reflectance(cosine, ref_idx):
+    """Aproximación de Schlick para determinar la probabilidad de reflexión."""
+    r0 = (1 - ref_idx) / (1 + ref_idx)
+    r0 = r0 * r0
+    return r0 + (1 - r0) * math.pow((1 - cosine), 5)
 
 def calculate_nee(rec, world):
     direct_light = Vec3(0, 0, 0)
@@ -62,9 +75,11 @@ def color_ray(ray, world, depth, puede_ver_luz=True):
 
     if closest_hit:
         # Si el rayo viene directo de la cámara y choca con la luz, la dibujamos
+        # 1. Luz Directa (Emisores)
         if closest_hit.emission.length() > 0:
             return closest_hit.emission if puede_ver_luz else Vec3(0, 0, 0)
 
+        # 2. Materiales Metálicos
         if closest_hit.is_metal:
             # --- LÓGICA DE METAL ---
             # 1. Calculamos la reflexión perfecta
@@ -76,15 +91,35 @@ def color_ray(ray, world, depth, puede_ver_luz=True):
 
             final_direction = (reflected_direction + perturbacion).normalize()
 
-            # Añadimos un pequeño margen (0.001) para evitar que el rayo choque con la misma esfera
-            scattered_ray = Ray(closest_hit.point + closest_hit.normal * 0.001, final_direction)
 
             # Verificamos que el rayo no se haya metido dentro de la esfera por la rugosidad
             if final_direction.dot(closest_hit.normal) > 0:
+                # Añadimos un pequeño margen (0.001) para evitar que el rayo choque con la misma esfera
+                scattered_ray = Ray(closest_hit.point + closest_hit.normal * 0.001, final_direction)
                 # ¡IMPORTANTE!: puede_ver_luz = True porque es un reflejo especular
                 return color_ray(scattered_ray, world, depth - 1, True) * closest_hit.color
             else:
-                return Vec3(0, 0, 0)    
+                return Vec3(0, 0, 0)   
+        # 3. Materiales Dieléctricos (VIDRIO)
+        elif closest_hit.is_dielectric:
+            # Determinamos si el rayo entra o sale del objeto
+            en_frente = ray.direction.dot(closest_hit.normal) < 0
+            ratio = (1.0 / closest_hit.ior) if en_frente else closest_hit.ior
+            normal = closest_hit.normal if en_frente else closest_hit.normal * -1
+            
+            unit_dir = ray.direction.normalize()
+            cos_theta = min((unit_dir * -1).dot(normal), 1.0)
+            sin_theta = math.sqrt(1.0 - cos_theta**2)
+
+            # ¿Reflexión Interna Total o Refracción?
+            no_puede_refractar = ratio * sin_theta > 1.0
+            if no_puede_refractar or reflectance(cos_theta, ratio) > random.random():
+                direccion = unit_dir.reflect(normal)
+            else:
+                direccion = refract(unit_dir, normal, ratio)
+
+            scattered_ray = Ray(closest_hit.point + direccion * 0.001, direccion)
+            return color_ray(scattered_ray, world, depth - 1, True) * closest_hit.color 
         else:
             # A. LUZ DIRECTA (NEE)
             luz_directa = calculate_nee(closest_hit, world)
@@ -136,16 +171,16 @@ def render():
     width, height = 400, 200
     camera_origin = Vec3(0, 0, 0)
     samples = 100  # Número de muestras. A mayor número, mayor nitidez
-    depth = 4  # Profundidad de rebotes
+    depth = 8 # Profundidad de rebotes
 
     # Nuestro "Mundo"
     world = [
-        Sphere(Vec3(0, -100.5, -1), 100, Vec3(0.8, 0.8, 0.8)), # Piso gris oscuro (80% de reflexión)
-        Sphere(Vec3(-0.6, 0, -1.2), 0.5, Vec3(1.0, 1.0, 1.0), is_metal=True, fuzz=0.2), # Esfera de Metal roja (is_metal=True)
-        Sphere(Vec3(0.6, 0, -1.2), 0.5, Vec3(0.1, 1.0, 0.1)), # Esfera Verde Mate
-        # LA LUZ DE ÁREA (Una esfera blanca muy brillante arriba)
-        # El color es Vec3(15, 15, 15) para que ilumine la escena
-        Sphere(Vec3(0, 3, -1), 1.5, Vec3(0, 0, 0), emission=Vec3(15, 15, 15)), # Luz
+        Sphere(Vec3(0, -100.5, -1), 100, Vec3(0.8, 0.8, 0.8)),
+        # Metal cromado a la izquierda
+        Sphere(Vec3(-0.6, 0, -1.2), 0.5, Vec3(1.0, 1.0, 1.0), is_metal=True, fuzz=0.0),
+        # VIDRIO a la derecha (IOR 1.5)
+        Sphere(Vec3(0.6, 0, -1.2), 0.5, Vec3(1.0, 1.0, 1.0), is_dielectric=True, ior=1.5),
+        Sphere(Vec3(0, 3, -1), 1.5, Vec3(0, 0, 0), emission=Vec3(15, 15, 15)),
     ]
 
     if USE_PARALLEL:
@@ -173,8 +208,8 @@ def render():
             row_data = render_row(y, width, height, samples, depth, world, camera_origin)
             data[y] = row_data
 
-    Image.fromarray(data).save("output/fuzziness.png")
-    print("\n¡Render finalizado con Luz de Área!")
+    Image.fromarray(data).save("output/dielectric.png")
+    print("\n¡Render finalizado con Vidrio!")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from src.geometry import Sphere
 from src.geometry import Quad
 from src.geometry import BVHNode
 from src.utils import generar_direccion_aleatoria
+from src.utils import load_obj
 import math
 import random
 import multiprocessing
@@ -254,29 +255,40 @@ def render():
     camera_origin = Vec3(278, 278, -800)
     lookat = Vec3(278, 278, 0)
     vup = Vec3(0, 1, 0)
-    dist_to_focus = 10.0
+
+    # Ahora calculamos la distancia focal automáticamente o la definimos
+    dist_to_focus = (camera_origin - lookat).length()
     fov = 40.0  # Grados
+    aperture = 2.0  # <--- Nuevo: Controla el desenfoque (0.0 = pinhole perfecto)
+    lens_radius = aperture / 2
 
     # Matemática de la cámara (Proyección)
+    aspect_ratio = width / height
     theta = math.radians(fov)
     h = math.tan(theta / 2)
     viewport_height = 2.0 * h
-    viewport_width = (width / height) * viewport_height
+    viewport_width = aspect_ratio * viewport_height
 
+# Construimos la base ortonormal de la cámara
     w = (camera_origin - lookat).normalize()
     u = vup.cross(w).normalize()
     v = w.cross(u)
 
-    horizontal = u * viewport_width * 800  # 800 es la distancia al plano focal aprox
-    vertical = v * viewport_height * 800
-    # Esquina inferior izquierda del "rectángulo" que ve la cámara
-    lower_left = camera_origin - horizontal / 2 - vertical / 2 - w * 800
+   # Escalamos los vectores horizontales y verticales por la distancia de enfoque
+    horizontal = u * viewport_width * dist_to_focus
+    vertical = v * viewport_height * dist_to_focus
+
+   # Esquina inferior izquierda (ahora depende de dist_to_focus)
+    lower_left = camera_origin - horizontal / 2 - vertical / 2 - w * dist_to_focus
 
     camera_params = {
         "origin": camera_origin,
         "lower_left": lower_left,
         "horizontal": horizontal,
         "vertical": vertical,
+        "u": u,
+        "v": v,
+        "lens_radius": lens_radius # Necesario para el Paso 3
     }
 
     # Cargamos la Cornell Box
@@ -313,59 +325,49 @@ def render():
             print(f"Progreso: {int(y/height*100)}%", end="\r")
 
             row_data = render_row(
-                y, width, height, samples, depth, world, lights, camera_origin
+                y, width, height, samples, depth, world, lights, camera_params
             )
             data[y] = row_data
 
     data = np.flipud(data)
-    Image.fromarray(data).save("output/cornell_box.png")
+    Image.fromarray(data).save("output/bunny.png")
     print("\n¡Render finalizado!")
 
 
 def render_obj(mode="cornell"):
     lista_objetos = []
     if mode == "cornell":
-        # Materiales
         rojo = Vec3(0.65, 0.05, 0.05)
         blanco = Vec3(0.73, 0.73, 0.73)
         verde = Vec3(0.12, 0.45, 0.15)
-        luz_emision = Vec3(40, 40, 40)  # ¡Más potencia!
+        luz_emision = Vec3(40, 40, 40)
 
-        # Paredes (Q, u, v, color)
-        lista_objetos.append(
-            Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde)
-        )  # Izquierda
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), rojo)
-        )  # Derecha
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 0), Vec3(555, 0, 0), Vec3(0, 0, 555), blanco)
-        )  # Piso
-        lista_objetos.append(
-            Quad(Vec3(555, 555, 555), Vec3(-555, 0, 0), Vec3(0, 0, -555), blanco)
-        )  # Techo
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
-        )  # Fondo
+        # PAREDES (Ajustadas para que las normales apunten HACIA ADENTRO)
+        # Izquierda (Verde)
+        lista_objetos.append(Quad(Vec3(555,0,0), Vec3(0,555,0), Vec3(0,0,555), verde))
+        # Derecha (Rojo)
+        lista_objetos.append(Quad(Vec3(0,0,0), Vec3(0,0,555), Vec3(0,555,0), rojo))
+        # Piso (Blanco) - Normal hacia arriba (0, 1, 0)
+        lista_objetos.append(Quad(Vec3(0,0,0), Vec3(0,0,555), Vec3(555,0,0), blanco))
+        # Techo (Blanco) - Normal hacia abajo (0, -1, 0)
+        lista_objetos.append(Quad(Vec3(555,555,555), Vec3(0,0,-555), Vec3(-555,0,0), blanco))
+        # Fondo (Blanco) - Normal hacia la cámara (0, 0, -1)
+        lista_objetos.append(Quad(Vec3(0,0,555), Vec3(555,0,0), Vec3(0,555,0), blanco))
 
-        # Luz de techo
-        lista_objetos.append(
-            Quad(
-                Vec3(213, 554.9, 227),
-                Vec3(130, 0, 0),
-                Vec3(0, 0, 105),
-                Vec3(0, 0, 0),
-                emission=luz_emision,
-            )
-        )
+        # LUZ DE TECHO
+        lista_objetos.append(Quad(Vec3(213, 554.9, 227), Vec3(130, 0, 0), Vec3(0, 0, 105), 
+                                  Vec3(0,0,0), emission=luz_emision))
 
-        # Esferas internas
-        lista_objetos.append(
-            Sphere(Vec3(190, 90, 190), 90, Vec3(1, 1, 1), is_dielectric=True, ior=1.5)
+        # MODELO 3D
+        params_vidrio = {'is_dielectric': True, 'ior': 1.5}
+        modelo_triangulos = load_obj(
+            "models/bunny.obj", 
+            color=Vec3(0.9, 0.9, 0.9), 
+            offset=Vec3(278, 0, 278), # Centrado en el piso
+            scale=3000.0,             # <--- Subimos de 150 a 3000
+            material_params={'is_dielectric': True, 'ior': 1.5} # Vidrio para que sea pro
         )
-        lista_objetos.append(
-            Sphere(Vec3(400, 90, 370), 90, Vec3(1, 1, 1), is_metal=True, fuzz=0.0)
-        )
+        lista_objetos.extend(modelo_triangulos)
 
     world = BVHNode.create(lista_objetos)
     lights = [obj for obj in lista_objetos if obj.emission.length() > 0]

@@ -3,6 +3,7 @@ from PIL import Image
 from src.vector import Vec3
 from src.ray import Ray
 from src.geometry import Sphere
+from src.geometry import Quad
 from src.geometry import BVHNode
 from src.utils import generar_direccion_aleatoria
 import math
@@ -150,7 +151,51 @@ def color_ray(ray, world, lights, depth, puede_ver_luz=True):
     return Vec3(0.05, 0.05, 0.05)
 
 
-def render_row(y, width, height, samples, depth, world, lights, camera_origin):
+def cornell_box():
+    lista = []
+
+    # Materiales de las paredes
+    rojo = Vec3(0.65, 0.05, 0.05)
+    blanco = Vec3(0.73, 0.73, 0.73)
+    verde = Vec3(0.12, 0.45, 0.15)
+    luz = Vec3(15, 15, 15)
+
+    # Paredes (Q, u, v, color)
+    lista.append(
+        Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde)
+    )  # Izquierda
+    lista.append(Quad(Vec3(0, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), rojo))  # Derecha
+    lista.append(Quad(Vec3(0, 0, 0), Vec3(555, 0, 0), Vec3(0, 0, 555), blanco))  # Piso
+    lista.append(
+        Quad(Vec3(555, 555, 555), Vec3(-555, 0, 0), Vec3(0, 0, -555), blanco)
+    )  # Techo
+    lista.append(
+        Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
+    )  # Fondo
+
+    # Luz de techo (pequeño Quad brillante)
+    lista.append(
+        Quad(
+            Vec3(213, 554, 227),
+            Vec3(130, 0, 0),
+            Vec3(0, 0, 105),
+            Vec3(0, 0, 0),
+            emission=luz,
+        )
+    )
+
+    # Agregamos tus esferas favoritas dentro
+    lista.append(
+        Sphere(Vec3(190, 90, 190), 90, Vec3(1, 1, 1), is_dielectric=True, ior=1.5)
+    )  # Vidrio
+    lista.append(
+        Sphere(Vec3(400, 90, 370), 90, Vec3(1, 1, 1), is_metal=True, fuzz=0.0)
+    )  # Metal
+
+    return BVHNode.create(lista)
+
+
+def render_row(y, width, height, samples, depth, world, lights, camera_params):
     """
     Función que procesa una sola fila de la imagen.
     Esta función es la que se distribuirá entre los núcleos.
@@ -159,9 +204,13 @@ def render_row(y, width, height, samples, depth, world, lights, camera_origin):
     # Calculamos la raíz de las muestras para crear una cuadrícula (ej: sqrt(100) = 10)
     s_side = int(math.sqrt(samples))
 
+    origin = camera_params["origin"]
+    lower_left = camera_params["lower_left"]
+    horizontal = camera_params["horizontal"]
+    vertical = camera_params["vertical"]
+
     for x in range(width):
         col = Vec3(0, 0, 0)
-
         # Bucle de Antialiasing Estratificado (Cuadrícula)
         for i in range(s_side):
             for j in range(s_side):
@@ -169,31 +218,69 @@ def render_row(y, width, height, samples, depth, world, lights, camera_origin):
                 u_offset = (i + random.random()) / s_side
                 v_offset = (j + random.random()) / s_side
 
-                u = ((x + u_offset) / width) * 4 - 2
-                v = -(((y + v_offset) / height) * 2 - 1)
+                # Calculamos las coordenadas normalizadas (0 a 1)
+                s = (x + u_offset) / width
+                t = (
+                    y + v_offset
+                ) / height  # En trazado de rayos 't' suele ser vertical
 
-                ray = Ray(camera_origin, Vec3(u, v, -1))
+                # El rayo ahora se calcula basado en el plano de la cámara
+                # Dirección = Punto en el plano - Origen
+                direction = lower_left + horizontal * s + vertical * t - origin
+                ray = Ray(origin, direction.normalize())
+
                 col = col + color_ray(ray, world, lights, depth)
 
         # Promediamos por el total real de muestras (s_side * s_side)
         pixel_color = col / (s_side * s_side)
 
-        # Corrección gamma y escalado a 255
-        r = min(255, int(255.99 * math.sqrt(pixel_color.x)))
-        g = min(255, int(255.99 * math.sqrt(pixel_color.y)))
-        b = min(255, int(255.99 * math.sqrt(pixel_color.z)))
+        # Corrección gamma (Gamma 2.2) y clamping a [0, 255]
+        # Usamos max(0, val) para evitar errores con valores negativos flotantes muy pequeños
+        r = min(255, int(255.99 * math.pow(max(0, pixel_color.x), 1 / 2.2)))
+        g = min(255, int(255.99 * math.pow(max(0, pixel_color.y), 1 / 2.2)))
+        b = min(255, int(255.99 * math.pow(max(0, pixel_color.z), 1 / 2.2)))
         row_pixels.append([r, g, b])
 
     return row_pixels
 
 
 def render():
-    width, height = 400, 200
-    camera_origin = Vec3(0, 0, 0)
-    samples = 100  # Número de muestras. A mayor número, mayor nitidez
-    depth = 8  # Profundidad de rebotes
+    # Para la Cornell Box es mejor un aspecto cuadrado
+    width, height = 400, 400
+    samples = 400
+    depth = 8
 
-    world, lights = render_obj(multiple_objects=True)
+    # --- CONFIGURACIÓN DE CÁMARA (Para la caja de 555 unidades) ---
+    camera_origin = Vec3(278, 278, -800)
+    lookat = Vec3(278, 278, 0)
+    vup = Vec3(0, 1, 0)
+    dist_to_focus = 10.0
+    fov = 40.0  # Grados
+
+    # Matemática de la cámara (Proyección)
+    theta = math.radians(fov)
+    h = math.tan(theta / 2)
+    viewport_height = 2.0 * h
+    viewport_width = (width / height) * viewport_height
+
+    w = (camera_origin - lookat).normalize()
+    u = vup.cross(w).normalize()
+    v = w.cross(u)
+
+    horizontal = u * viewport_width * 800  # 800 es la distancia al plano focal aprox
+    vertical = v * viewport_height * 800
+    # Esquina inferior izquierda del "rectángulo" que ve la cámara
+    lower_left = camera_origin - horizontal / 2 - vertical / 2 - w * 800
+
+    camera_params = {
+        "origin": camera_origin,
+        "lower_left": lower_left,
+        "horizontal": horizontal,
+        "vertical": vertical,
+    }
+
+    # Cargamos la Cornell Box
+    world, lights = render_obj(mode="cornell")
 
     if USE_PARALLEL:
         num_cores = multiprocessing.cpu_count()
@@ -208,7 +295,7 @@ def render():
             depth=depth,
             world=world,
             lights=lights,
-            camera_origin=camera_origin,
+            camera_params=camera_params,
         )
 
         # Creamos un Pool de procesos
@@ -230,61 +317,58 @@ def render():
             )
             data[y] = row_data
 
-    Image.fromarray(data).save("output/bvh.png")
-    print("\n¡Render finalizado con BVH!")
+    data = np.flipud(data)
+    Image.fromarray(data).save("output/cornell_box.png")
+    print("\n¡Render finalizado!")
 
 
-def render_obj(multiple_objects=False):
-    world = []
-    if multiple_objects:
-        # Prueba esto en tu función render()
-        lista_objetos = []
+def render_obj(mode="cornell"):
+    lista_objetos = []
+    if mode == "cornell":
+        # Materiales
+        rojo = Vec3(0.65, 0.05, 0.05)
+        blanco = Vec3(0.73, 0.73, 0.73)
+        verde = Vec3(0.12, 0.45, 0.15)
+        luz_emision = Vec3(40, 40, 40)  # ¡Más potencia!
 
-        # Piso
-        lista_objetos.append(Sphere(Vec3(0, -100.5, -1), 100, Vec3(0.5, 0.5, 0.5)))
-
-        # Generamos 50 esferas pequeñas al azar
-        for _ in range(50):
-            pos = Vec3(
-                random.uniform(-4, 4), random.uniform(0, 2), random.uniform(-4, 0)
-            )
-            color = Vec3(random.random(), random.random(), random.random())
-            # 50% probabilidad de ser metal
-            metal = random.random() > 0.5
-            lista_objetos.append(Sphere(pos, 0.2, color, is_metal=metal, fuzz=0.1))
-
-        # La luz
+        # Paredes (Q, u, v, color)
         lista_objetos.append(
-            Sphere(Vec3(0, 10, -1), 2, Vec3(0, 0, 0), emission=Vec3(20, 20, 20))
+            Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde)
+        )  # Izquierda
+        lista_objetos.append(
+            Quad(Vec3(0, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), rojo)
+        )  # Derecha
+        lista_objetos.append(
+            Quad(Vec3(0, 0, 0), Vec3(555, 0, 0), Vec3(0, 0, 555), blanco)
+        )  # Piso
+        lista_objetos.append(
+            Quad(Vec3(555, 555, 555), Vec3(-555, 0, 0), Vec3(0, 0, -555), blanco)
+        )  # Techo
+        lista_objetos.append(
+            Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
+        )  # Fondo
+
+        # Luz de techo
+        lista_objetos.append(
+            Quad(
+                Vec3(213, 554.9, 227),
+                Vec3(130, 0, 0),
+                Vec3(0, 0, 105),
+                Vec3(0, 0, 0),
+                emission=luz_emision,
+            )
         )
 
-        # CONSTRUIR EL BVH
-        world = BVHNode.create(lista_objetos)
-    else:
-        # Nuestro "Mundo"
-        lista_objetos = [
-            Sphere(Vec3(0, -100.5, -1), 100, Vec3(0.8, 0.8, 0.8)),
-            # Metal cromado a la izquierda
-            Sphere(
-                Vec3(-0.6, 0, -1.2), 0.5, Vec3(1.0, 1.0, 1.0), is_metal=True, fuzz=0.0
-            ),
-            # VIDRIO a la derecha (IOR 1.5)
-            Sphere(
-                Vec3(0.6, 0, -1.2),
-                0.5,
-                Vec3(1.0, 1.0, 1.0),
-                is_dielectric=True,
-                ior=1.5,
-            ),
-            Sphere(Vec3(0, 3, -1), 1.5, Vec3(0, 0, 0), emission=Vec3(15, 15, 15)),
-        ]
+        # Esferas internas
+        lista_objetos.append(
+            Sphere(Vec3(190, 90, 190), 90, Vec3(1, 1, 1), is_dielectric=True, ior=1.5)
+        )
+        lista_objetos.append(
+            Sphere(Vec3(400, 90, 370), 90, Vec3(1, 1, 1), is_metal=True, fuzz=0.0)
+        )
 
-        world = BVHNode.create(lista_objetos)
-
-    # Extraemos las luces de la lista ORIGINAL de objetos para NEE
+    world = BVHNode.create(lista_objetos)
     lights = [obj for obj in lista_objetos if obj.emission.length() > 0]
-
-    # Construimos el árbol una sola vez al principio
     return world, lights
 
 

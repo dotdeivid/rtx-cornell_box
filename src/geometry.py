@@ -3,7 +3,6 @@ import random
 from src.vector import Vec3
 from src.ray import Ray
 
-
 class BVHNode:
     def __init__(self, left, right, box):
         """
@@ -293,3 +292,105 @@ class Sphere:
             self.center - Vec3(self.radius, self.radius, self.radius),
             self.center + Vec3(self.radius, self.radius, self.radius),
         )
+
+class Quad:
+    def __init__(self, Q: Vec3, u: Vec3, v: Vec3, color: Vec3, emission=None, 
+                 is_metal=False, fuzz=0.0, is_dielectric=False, ior=1.5):
+        self.Q = Q
+        self.u = u
+        self.v = v
+        self.color = color
+        self.emission = emission if emission else Vec3(0, 0, 0)
+        self.is_metal = is_metal
+        self.fuzz = fuzz
+        self.is_dielectric = is_dielectric
+        self.ior = ior
+        
+        # Precalculamos valores para la intersección
+        n = u.cross(v)
+        self.normal = n.normalize()
+        self.D = self.normal.dot(self.Q)
+        self.w = n / n.dot(n) # Vector auxiliar para coordenadas (u, v)
+
+    @property
+    def center(self):
+        """Calcula el centro geométrico del cuadrilátero."""
+        # El centro de un Quad es el punto de origen Q desplazado 
+        # a la mitad de sus vectores u y v.
+        return self.Q + (self.u * 0.5) + (self.v * 0.5)
+
+    def bounding_box(self):
+        """Calcula la caja que envuelve al cuadrilátero."""
+        # Calculamos las 4 esquinas
+        p1 = self.Q
+        p2 = self.Q + self.u
+        p3 = self.Q + self.v
+        p4 = self.Q + self.u + self.v
+        
+        # Buscamos los mínimos y máximos (añadimos un margen de 0.0001 por si es plano)
+        min_pt = Vec3(
+            min(p1.x, p2.x, p3.x, p4.x) - 0.0001,
+            min(p1.y, p2.y, p3.y, p4.y) - 0.0001,
+            min(p1.z, p2.z, p3.z, p4.z) - 0.0001
+        )
+        max_pt = Vec3(
+            max(p1.x, p2.x, p3.x, p4.x) + 0.0001,
+            max(p1.y, p2.y, p3.y, p4.y) + 0.0001,
+            max(p1.z, p2.z, p3.z, p4.z) + 0.0001
+        )
+        return AABB(min_pt, max_pt)
+
+    def hit(self, ray: Ray, t_min=0.001, t_max=float('inf')):
+        denom = self.normal.dot(ray.direction)
+        
+        # Si el rayo es paralelo al plano, no hay impacto
+        if abs(denom) < 1e-8:
+            return None
+            
+        # Distancia t hasta el plano
+        t = (self.D - self.normal.dot(ray.origin)) / denom
+        if t < t_min or t > t_max:
+            return None
+            
+        # Determinamos si el punto de impacto está dentro de los límites u y v
+        intersection = ray.point_at(t)
+        planar_hit_pt_vector = intersection - self.Q
+        
+        # Usamos el vector w para proyectar el punto en coordenadas alfa y beta
+        alpha = self.w.dot(planar_hit_pt_vector.cross(self.v))
+        beta = self.w.dot(self.u.cross(planar_hit_pt_vector))
+        
+        if not (0 <= alpha <= 1 and 0 <= beta <= 1):
+            return None
+            
+        return HitRecord(t, intersection, self.normal, self.color, self.emission,
+                         self.is_metal, self.fuzz, self.is_dielectric, self.ior, obj_ref=self)
+
+    def sample_solid_angle(self, hit_point):
+        """
+        Genera una dirección aleatoria hacia un punto del cuadrilátero
+        y calcula el ángulo sólido aproximado que ocupa.
+        """
+        # 1. Elegimos un punto aleatorio en la superficie del Quad
+        # Punto = Origen + (u * random) + (v * random)
+        random_point = self.Q + (self.u * random.random()) + (self.v * random.random())
+        
+        # 2. Calculamos el vector dirección y la distancia
+        direction_to_light = random_point - hit_point
+        distance_sq = direction_to_light.dot(direction_to_light)
+        distance = math.sqrt(distance_sq)
+        direction = direction_to_light / distance
+        
+        # 3. Calculamos el área del cuadrilátero (magnitud del producto cruz)
+        area = self.u.cross(self.v).length()
+        
+        # 4. Calculamos el coseno del ángulo entre la normal del Quad y la dirección del rayo
+        # Usamos abs porque la luz puede emitir por ambos lados o estar orientada
+        cos_light = abs(self.normal.dot(direction))
+        
+        # 5. Ángulo sólido (Omega) para un parche plano:
+        # Omega = (Area * cos_theta_luz) / distancia^2
+        # Esto convierte la probabilidad de área en probabilidad de ángulo sólido
+        solid_angle = (area * cos_light) / distance_sq
+        
+        return direction, solid_angle

@@ -394,3 +394,69 @@ class Quad:
         solid_angle = (area * cos_light) / distance_sq
         
         return direction, solid_angle
+
+class Triangle:
+    def __init__(self, v0: Vec3, v1: Vec3, v2: Vec3, color: Vec3, emission=None, 
+                 is_metal=False, fuzz=0.0, is_dielectric=False, ior=1.5):
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+        self.color = color
+        self.emission = emission if emission else Vec3(0, 0, 0)
+        self.is_metal = is_metal
+        self.fuzz = fuzz
+        self.is_dielectric = is_dielectric
+        self.ior = ior
+        
+        # Precalculamos la normal del triángulo
+        edge1 = self.v1 - self.v0
+        edge2 = self.v2 - self.v0
+        self.normal = edge1.cross(edge2).normalize()
+
+    def bounding_box(self):
+        """La caja envolvente son los mínimos y máximos de los 3 vértices."""
+        min_pt = Vec3(
+            min(self.v0.x, self.v1.x, self.v2.x) - 0.001,
+            min(self.v0.y, self.v1.y, self.v2.y) - 0.001,
+            min(self.v0.z, self.v1.z, self.v2.z) - 0.001
+        )
+        max_pt = Vec3(
+            max(self.v0.x, self.v1.x, self.v2.x) + 0.001,
+            max(self.v0.y, self.v1.y, self.v2.y) + 0.001,
+            max(self.v0.z, self.v1.z, self.v2.z) + 0.001
+        )
+        return AABB(min_pt, max_pt)
+
+    def hit(self, ray: Ray, t_min=0.001, t_max=float('inf')):
+        # Algoritmo Möller-Trumbore
+        edge1 = self.v1 - self.v0
+        edge2 = self.v2 - self.v0
+        h = ray.direction.cross(edge2)
+        a = edge1.dot(h)
+
+        # Si a es cercano a 0, el rayo es paralelo al triángulo
+        if -1e-8 < a < 1e-8:
+            return None
+
+        f = 1.0 / a
+        s = ray.origin - self.v0
+        u = f * s.dot(h)
+
+        if u < 0.0 or u > 1.0:
+            return None
+
+        q = s.cross(edge1)
+        v = f * ray.direction.dot(q)
+
+        if v < 0.0 or u + v > 1.0:
+            return None
+
+        # Calculamos t para ver dónde está la intersección en la línea del rayo
+        t = f * edge2.dot(q)
+
+        if t_min < t < t_max:
+            intersection_point = ray.point_at(t)
+            return HitRecord(t, intersection_point, self.normal, self.color, self.emission,
+                             self.is_metal, self.fuzz, self.is_dielectric, self.ior, obj_ref=self)
+        
+        return None

@@ -91,3 +91,10 @@ def load_obj(filename, color, offset=Vec3(0,0,0), scale=1.0, material_params=Non
         print(f"Error al cargar el archivo OBJ: {e}")
         
     return triangles
+
+def random_in_unit_disk():
+    """Genera un punto aleatorio dentro de un disco de radio 1."""
+    while True:
+        p = Vec3(random.uniform(-1, 1), random.uniform(-1, 1), 0)
+        if p.length() < 1.0:
+            return p

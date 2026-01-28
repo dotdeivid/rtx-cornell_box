@@ -7,6 +7,7 @@ from src.geometry import Quad
 from src.geometry import BVHNode
 from src.utils import generar_direccion_aleatoria
 from src.utils import load_obj
+from src.utils import random_in_unit_disk
 import math
 import random
 import multiprocessing
@@ -209,6 +210,9 @@ def render_row(y, width, height, samples, depth, world, lights, camera_params):
     lower_left = camera_params["lower_left"]
     horizontal = camera_params["horizontal"]
     vertical = camera_params["vertical"]
+    u_cam = camera_params["u"]
+    v_cam = camera_params["v"]
+    lens_radius = camera_params["lens_radius"]
 
     for x in range(width):
         col = Vec3(0, 0, 0)
@@ -221,15 +225,21 @@ def render_row(y, width, height, samples, depth, world, lights, camera_params):
 
                 # Calculamos las coordenadas normalizadas (0 a 1)
                 s = (x + u_offset) / width
-                t = (
-                    y + v_offset
-                ) / height  # En trazado de rayos 't' suele ser vertical
+                t = (y + v_offset) / height  # En trazado de rayos 't' suele ser vertical
 
+                # --- LÓGICA BOKEH ---
+                # 1. Obtenemos un desplazamiento aleatorio en la lente
+                rd = random_in_unit_disk() * lens_radius
+                offset = u_cam * rd.x + v_cam * rd.y
+
+                # 2. El rayo sale desde el origen desplazado
+                new_origin = origin + offset
+                # 3. La dirección apunta al punto en el plano de enfoque
+                direction = lower_left + horizontal * s + vertical * t - new_origin
+                
                 # El rayo ahora se calcula basado en el plano de la cámara
                 # Dirección = Punto en el plano - Origen
-                direction = lower_left + horizontal * s + vertical * t - origin
-                ray = Ray(origin, direction.normalize())
-
+                ray = Ray(new_origin, direction.normalize())
                 col = col + color_ray(ray, world, lights, depth)
 
         # Promediamos por el total real de muestras (s_side * s_side)
@@ -253,13 +263,13 @@ def render():
 
     # --- CONFIGURACIÓN DE CÁMARA (Para la caja de 555 unidades) ---
     camera_origin = Vec3(278, 278, -800)
-    lookat = Vec3(278, 278, 0)
+    lookat = Vec3(278, 278, 278) # Apuntamos al centro de la caja
     vup = Vec3(0, 1, 0)
 
     # Ahora calculamos la distancia focal automáticamente o la definimos
     dist_to_focus = (camera_origin - lookat).length()
     fov = 40.0  # Grados
-    aperture = 2.0  # <--- Nuevo: Controla el desenfoque (0.0 = pinhole perfecto)
+    aperture = 20.0 # Se sube este valor para ver más desenfoque
     lens_radius = aperture / 2
 
     # Matemática de la cámara (Proyección)
@@ -269,16 +279,16 @@ def render():
     viewport_height = 2.0 * h
     viewport_width = aspect_ratio * viewport_height
 
-# Construimos la base ortonormal de la cámara
+    # Construimos la base ortonormal de la cámara
     w = (camera_origin - lookat).normalize()
     u = vup.cross(w).normalize()
     v = w.cross(u)
 
-   # Escalamos los vectores horizontales y verticales por la distancia de enfoque
+    # Escalamos los vectores horizontales y verticales por la distancia de enfoque
     horizontal = u * viewport_width * dist_to_focus
     vertical = v * viewport_height * dist_to_focus
 
-   # Esquina inferior izquierda (ahora depende de dist_to_focus)
+    # Esquina inferior izquierda (ahora depende de dist_to_focus)
     lower_left = camera_origin - horizontal / 2 - vertical / 2 - w * dist_to_focus
 
     camera_params = {
@@ -330,7 +340,7 @@ def render():
             data[y] = row_data
 
     data = np.flipud(data)
-    Image.fromarray(data).save("output/bunny.png")
+    Image.fromarray(data).save("output/bokeh.png")
     print("\n¡Render finalizado!")
 
 

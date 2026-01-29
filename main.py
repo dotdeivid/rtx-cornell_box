@@ -521,116 +521,6 @@ def color_ray(ray, world, lights, depth, puede_ver_luz=True):
     return Vec3(0.05, 0.05, 0.05)
 
 
-def cornell_box():
-    """
-    Crea la escena clásica Cornell Box para testing de path tracers.
-
-    La Cornell Box es un estándar de la industria creado en 1984 por el Cornell
-    Program of Computer Graphics para validar algoritmos de iluminación global.
-
-    Características de la Escena:
-        - Dimensiones: 555 × 555 × 555 unidades
-        - 5 paredes difusas (piso, techo, pared trasera + 2 laterales coloreadas)
-        - 1 luz de área en el techo
-        - 2 objetos: 1 esfera de vidrio + 1 esfera metálica
-
-    Configuración de Materiales:
-        - Pared izquierda: Verde (RGB 0.12, 0.45, 0.15)
-        - Pared derecha: Roja (RGB 0.65, 0.05, 0.05)
-        - Otras paredes: Blanco difuso (RGB 0.73, 0.73, 0.73)
-        - Luz: Emisión blanca intensa (RGB 15, 15, 15)
-
-    Geometría:
-        Todas las paredes son Quads (cuadriláteros) definidos por:
-        - Q: Esquina inicial
-        - u: Vector lado 1
-        - v: Vector lado 2
-
-        Normales apuntan HACIA ADENTRO de la caja.
-
-    Objetos:
-        1. **Esfera de vidrio** (dieléctrico):
-           - Centro: (190, 90, 190)
-           - Radio: 90
-           - IOR: 1.5 (vidrio estándar)
-
-        2. **Esfera metálica** (espejo perfecto):
-           - Centro: (400, 90, 370)
-           - Radio: 90
-           - Fuzz: 0.0 (reflexión perfecta)
-
-    Luz:
-        - Posición: Centro del techo (ligeramente offset)
-        - Tamaño: 130 × 105 unidades
-        - Tipo: Quad emisor
-
-    Returns:
-        BVHNode: Árbol BVH con toda la geometría de la escena
-
-    Uso:
-        ```python
-        scene = cornell_box()
-        hit = scene.hit(ray, 0.001, float('inf'))
-        ```
-
-    Efectos Visuales Esperados:
-        - Caustics: Luz focalizada por esfera de vidrio
-        - Color bleeding: Verde/rojo sangran en paredes blancas
-        - Soft shadows: Sombras suaves por luz de área
-        - Specular reflections: Esfera metálica refleja escena
-        - Refraction: Vidrio distorsiona objetos detrás
-
-    Historial:
-        La Cornell Box original tenía dos cajas en vez de esferas.
-        Esta versión usa esferas para mostrar materiales complejos.
-
-    Complejidad:
-        Construcción: O(N log N) donde N = número de objetos (BVH)
-        Memoria: O(N)
-    """
-    lista = []
-
-    # Materiales de las paredes
-    rojo = Vec3(0.65, 0.05, 0.05)
-    blanco = Vec3(0.73, 0.73, 0.73)
-    verde = Vec3(0.12, 0.45, 0.15)
-    luz = Vec3(15, 15, 15)
-
-    # Paredes (Q, u, v, color)
-    lista.append(
-        Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde)
-    )  # Izquierda
-    lista.append(Quad(Vec3(0, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), rojo))  # Derecha
-    lista.append(Quad(Vec3(0, 0, 0), Vec3(555, 0, 0), Vec3(0, 0, 555), blanco))  # Piso
-    lista.append(
-        Quad(Vec3(555, 555, 555), Vec3(-555, 0, 0), Vec3(0, 0, -555), blanco)
-    )  # Techo
-    lista.append(
-        Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
-    )  # Fondo
-
-    # Luz de techo (pequeño Quad brillante)
-    lista.append(
-        Quad(
-            Vec3(213, 554, 227),
-            Vec3(130, 0, 0),
-            Vec3(0, 0, 105),
-            Vec3(0, 0, 0),
-            emission=luz,
-        )
-    )
-
-    # Agregamos tus esferas favoritas dentro
-    lista.append(
-        Sphere(Vec3(190, 90, 190), 90, Vec3(1, 1, 1), is_dielectric=True, ior=1.5)
-    )  # Vidrio
-    lista.append(
-        Sphere(Vec3(400, 90, 370), 90, Vec3(1, 1, 1), is_metal=True, fuzz=0.0)
-    )  # Metal
-
-    return BVHNode.create(lista)
-
-
 def render_row(y, width, height, samples, depth, world, lights, camera_params):
     """
     Renderiza una fila completa de la imagen (diseñada para ejecución paralela).
@@ -986,8 +876,8 @@ def render():
         "lens_radius": lens_radius,  # Necesario para el Paso 3
     }
 
-    # Cargamos la Cornell Box
-    world, lights = render_obj(mode="cornell")
+    # Cargamos la Cornell Box (modo bunny por defecto)
+    world, lights = render_obj(mode="bunny")
 
     if USE_PARALLEL:
         num_cores = multiprocessing.cpu_count()
@@ -1029,22 +919,22 @@ def render():
     print("\n¡Render finalizado!")
 
 
-def render_obj(mode="cornell"):
+def render_obj(mode="bunny"):
     """
-    Configura y carga la escena a renderizar (Cornell Box con modelo 3D).
+    Configura y carga la escena a renderizar (Cornell Box con diferentes objetos).
 
     Esta función centraliza la construcción de escenas, permitiendo diferentes
-    configuraciones mediante el parámetro 'mode'.
+    configuraciones mediante el parámetro 'mode'. La Cornell Box (paredes y luz)
+    se mantiene igual en todos los modos, solo cambian los objetos del centro.
 
-    Modo "cornell":
-        - 5 paredes difusas (Cornell Box clásica)
-        - 1 luz de área en el techo
-        - 1 modelo 3D OBJ (bunny.obj) de vidrio
+    Modos Disponibles:
+        - "spheres": Cornell Box con 2 esferas (vidrio + metal)
+        - "bunny": Cornell Box con modelo 3D bunny.obj de vidrio (default)
 
     Args:
-        mode (str): Tipo de escena a cargar
-            - "cornell": Cornell Box con bunny de vidrio (default)
-            - Otros modos: Extendible para futuras escenas
+        mode (str): Tipo de objetos a renderizar en el centro
+            - "spheres": 1 esfera de vidrio + 1 esfera metálica
+            - "bunny": Modelo 3D OBJ (bunny.obj) de vidrio
 
     Returns:
         tuple[BVHNode, list]:
@@ -1053,20 +943,31 @@ def render_obj(mode="cornell"):
 
     Configuración de Materiales:
 
-        **Paredes**:
+        **Paredes** (Idénticas en todos los modos):
             - Izquierda (Verde): RGB(0.12, 0.45, 0.15)
             - Derecha (Rojo): RGB(0.65, 0.05, 0.05)
             - Resto (Blanco): RGB(0.73, 0.73, 0.73)
 
-        **Luz**:
-            - Emisión: RGB(40, 40, 40)  ← Alta intensidad
-            - Posición: Cerca del techo (Y=554.9)
+        **Luz** (Idéntica en todos los modos):
+            - Emisión: RGB(15, 15, 15) para spheres, RGB(40, 40, 40) para bunny
+            - Posición: Cerca del techo (Y=554 o Y=554.9)
             - Tamaño: 130 × 105 unidades
 
-        **Bunny**:
+        **Modo "spheres"**:
+            - Esfera de vidrio:
+              * Centro: (190, 90, 190)
+              * Radio: 90
+              * Material: Vidrio (IOR 1.5)
+            - Esfera metálica:
+              * Centro: (400, 90, 370)
+              * Radio: 90
+              * Material: Metal (fuzz 0.0 = espejo perfecto)
+
+        **Modo "bunny"**:
             - Material: Vidrio (IOR 1.5)
             - Escala: 3000× (bunny.obj original es muy pequeño)
             - Offset: Centrado en el piso (278, 0, 278)
+            - Triángulos: ~69,000
 
     Geometría de Paredes (Quads):
 
@@ -1130,7 +1031,11 @@ def render_obj(mode="cornell"):
 
     Ejemplo de Uso:
         ```python
-        world, lights = render_obj(mode="cornell")
+        # Cornell Box con esferas
+        world, lights = render_obj(mode="spheres")
+
+        # Cornell Box con bunny
+        world, lights = render_obj(mode="bunny")
 
         # Trazar rayo
         ray = Ray(origin, direction)
@@ -1143,14 +1048,18 @@ def render_obj(mode="cornell"):
 
     Extensibilidad:
 
-        Para añadir nuevas escenas:
+        Para añadir nuevos objetos en la Cornell Box:
         ```python
-        def render_obj(mode="cornell"):
-            if mode == "cornell":
-                # ... configuración actual
+        def render_obj(mode="bunny"):
+            # ... crear paredes y luz ...
+
+            if mode == "spheres":
+                # ... esferas ...
+            elif mode == "bunny":
+                # ... bunny ...
             elif mode == "custom":
-                # Tu escena personalizada
-                lista_objetos = [...]
+                # Tu objeto personalizado
+                lista_objetos.extend([...])
 
             world = BVHNode.create(lista_objetos)
             lights = [obj for obj in lista_objetos if obj.emission.length() > 0]
@@ -1163,35 +1072,74 @@ def render_obj(mode="cornell"):
         donde N = número total de primitivas
     """
     lista_objetos = []
-    if mode == "cornell":
-        rojo = Vec3(0.65, 0.05, 0.05)
-        blanco = Vec3(0.73, 0.73, 0.73)
-        verde = Vec3(0.12, 0.45, 0.15)
+
+    # Materiales (idénticos para todos los modos)
+    rojo = Vec3(0.65, 0.05, 0.05)
+    blanco = Vec3(0.73, 0.73, 0.73)
+    verde = Vec3(0.12, 0.45, 0.15)
+
+    # PAREDES DE LA CORNELL BOX (idénticas para todos los modos)
+    # Normales apuntan HACIA ADENTRO
+
+    # Izquierda (Verde)
+    lista_objetos.append(Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde))
+    # Derecha (Rojo)
+    lista_objetos.append(Quad(Vec3(0, 0, 0), Vec3(0, 0, 555), Vec3(0, 555, 0), rojo))
+    # Piso (Blanco) - Normal hacia arriba (0, 1, 0)
+    lista_objetos.append(Quad(Vec3(0, 0, 0), Vec3(0, 0, 555), Vec3(555, 0, 0), blanco))
+    # Techo (Blanco) - Normal hacia abajo (0, -1, 0)
+    lista_objetos.append(
+        Quad(Vec3(555, 555, 555), Vec3(0, 0, -555), Vec3(-555, 0, 0), blanco)
+    )
+    # Fondo (Blanco) - Normal hacia la cámara (0, 0, -1)
+    lista_objetos.append(
+        Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
+    )
+
+    # OBJETOS DEL CENTRO (cambian según el modo)
+    if mode == "spheres":
+        # Modo esferas: 2 esferas (vidrio + metal)
+        luz_emision = Vec3(15, 15, 15)
+
+        # Esfera de vidrio (dieléctrico)
+        lista_objetos.append(
+            Sphere(Vec3(190, 90, 190), 90, Vec3(1, 1, 1), is_dielectric=True, ior=1.5)
+        )
+
+        # Esfera metálica (espejo perfecto)
+        lista_objetos.append(
+            Sphere(Vec3(400, 90, 370), 90, Vec3(1, 1, 1), is_metal=True, fuzz=0.0)
+        )
+
+        # LUZ DE TECHO (para modo esferas)
+        lista_objetos.append(
+            Quad(
+                Vec3(213, 554, 227),
+                Vec3(130, 0, 0),
+                Vec3(0, 0, 105),
+                Vec3(0, 0, 0),
+                emission=luz_emision,
+            )
+        )
+
+    elif mode == "bunny":
+        # Modo bunny: Modelo 3D OBJ
         luz_emision = Vec3(40, 40, 40)
 
-        # PAREDES (Ajustadas para que las normales apunten HACIA ADENTRO)
-        # Izquierda (Verde)
-        lista_objetos.append(
-            Quad(Vec3(555, 0, 0), Vec3(0, 555, 0), Vec3(0, 0, 555), verde)
+        # Modelo 3D - Bunny de vidrio
+        modelo_triangulos = load_obj(
+            "models/bunny.obj",
+            color=Vec3(0.9, 0.9, 0.9),
+            offset=Vec3(278, 0, 278),  # Centrado en el piso
+            scale=3000.0,
+            material_params={
+                "is_dielectric": True,
+                "ior": 1.5,
+            },
         )
-        # Derecha (Rojo)
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 0), Vec3(0, 0, 555), Vec3(0, 555, 0), rojo)
-        )
-        # Piso (Blanco) - Normal hacia arriba (0, 1, 0)
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 0), Vec3(0, 0, 555), Vec3(555, 0, 0), blanco)
-        )
-        # Techo (Blanco) - Normal hacia abajo (0, -1, 0)
-        lista_objetos.append(
-            Quad(Vec3(555, 555, 555), Vec3(0, 0, -555), Vec3(-555, 0, 0), blanco)
-        )
-        # Fondo (Blanco) - Normal hacia la cámara (0, 0, -1)
-        lista_objetos.append(
-            Quad(Vec3(0, 0, 555), Vec3(555, 0, 0), Vec3(0, 555, 0), blanco)
-        )
+        lista_objetos.extend(modelo_triangulos)
 
-        # LUZ DE TECHO
+        # LUZ DE TECHO (para modo bunny - más intensa)
         lista_objetos.append(
             Quad(
                 Vec3(213, 554.9, 227),
@@ -1201,21 +1149,10 @@ def render_obj(mode="cornell"):
                 emission=luz_emision,
             )
         )
+    else:
+        raise ValueError(f"Modo '{mode}' no reconocido. Usa 'spheres' o 'bunny'.")
 
-        # MODELO 3D
-        params_vidrio = {"is_dielectric": True, "ior": 1.5}
-        modelo_triangulos = load_obj(
-            "models/bunny.obj",
-            color=Vec3(0.9, 0.9, 0.9),
-            offset=Vec3(278, 0, 278),  # Centrado en el piso
-            scale=3000.0,  # <--- Subimos de 150 a 3000
-            material_params={
-                "is_dielectric": True,
-                "ior": 1.5,
-            },  # Vidrio para que sea pro
-        )
-        lista_objetos.extend(modelo_triangulos)
-
+    # Construir BVH y extraer luces
     world = BVHNode.create(lista_objetos)
     lights = [obj for obj in lista_objetos if obj.emission.length() > 0]
     return world, lights

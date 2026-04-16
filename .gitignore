@@ -25,20 +25,6 @@ venv.bak/
 .virtualenv/
 
 # ----------------------------------------------------------------------------
-# Outputs del Ray Tracer
-# (Imágenes renderizadas - pueden ser muy grandes)
-# ----------------------------------------------------------------------------
-output/*.png
-output/*.jpg
-output/*.jpeg
-output/*.bmp
-output/*.exr
-output/*.hdr
-
-# Mantener el directorio output/ pero vacío
-!output/.gitkeep
-
-# ----------------------------------------------------------------------------
 # IDEs y Editores
 # ----------------------------------------------------------------------------
 # PyCharm / IntelliJ

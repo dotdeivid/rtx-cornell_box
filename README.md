@@ -14,6 +14,7 @@ Un **path tracer fotorealista** implementado en Python puro que simula física d
 - [¿Qué hace este proyecto?](#-qué-hace-este-proyecto)
 - [¿Cómo funciona?](#-cómo-funciona)
 - [Instalación](#-instalación)
+- [Instalación con Docker](#-instalación-con-docker-recomendado)
 - [Uso](#-uso)
 - [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Clases Principales](#-clases-principales)
@@ -141,6 +142,125 @@ python main.py
 ```txt
 numpy>=1.21.0    # Álgebra vectorial y arrays
 Pillow>=9.0.0    # Guardar imágenes PNG
+```
+
+---
+
+## 🐳 Instalación con Docker (Recomendado)
+
+Docker permite ejecutar el proyecto en **cualquier ordenador** sin preocuparte por dependencias de Python, versiones o configuraciones del sistema. Es la forma más rápida y confiable de empezar.
+
+### Requisitos
+- Docker Desktop instalado ([Descargar aquí](https://www.docker.com/products/docker-desktop))
+- ~500 MB de espacio en disco
+
+### Construcción de la Imagen
+
+```bash
+# 1. Clonar repositorio
+git clone https://github.com/tuusuario/rtx-cornell_box.git
+cd rtx-cornell_box
+
+# 2. Construir imagen Docker
+docker build -t rtx-cornell-box .
+
+# Verificar que la imagen se creó correctamente
+docker images rtx-cornell-box
+```
+
+### Uso Básico
+
+```bash
+# Renderizar con configuración por defecto
+# La imagen se guardará en output/bokeh.png
+docker run -v $(pwd)/output:/app/output rtx-cornell-box
+
+# En Windows PowerShell:
+docker run -v ${PWD}/output:/app/output rtx-cornell-box
+
+# En Windows CMD:
+docker run -v %cd%/output:/app/output rtx-cornell-box
+```
+
+### Configuración Avanzada con Variables de Entorno
+
+Puedes ajustar los parámetros de renderizado sin modificar el código:
+
+```bash
+# Renderizado de alta calidad (más lento)
+docker run \
+  -e RTX_WIDTH=800 \
+  -e RTX_HEIGHT=800 \
+  -e RTX_SAMPLES=1000 \
+  -e RTX_DEPTH=12 \
+  -v $(pwd)/output:/app/output \
+  rtx-cornell-box
+
+# Preview rápido (menor calidad)
+docker run \
+  -e RTX_WIDTH=400 \
+  -e RTX_HEIGHT=400 \
+  -e RTX_SAMPLES=100 \
+  -e RTX_DEPTH=4 \
+  -v $(pwd)/output:/app/output \
+  rtx-cornell-box
+```
+
+### Variables de Entorno Disponibles
+
+| Variable | Descripción | Valor por Defecto |
+|----------|-------------|-------------------|
+| `RTX_WIDTH` | Ancho de imagen en píxeles | `400` |
+| `RTX_HEIGHT` | Alto de imagen en píxeles | `400` |
+| `RTX_SAMPLES` | Muestras por píxel (calidad) | `400` |
+| `RTX_DEPTH` | Rebotes máximos de luz | `8` |
+| `RTX_NUM_WORKERS` | Núcleos CPU (0=auto) | `0` |
+
+### Modo Interactivo
+
+Para desarrollo o debugging, puedes acceder a un shell dentro del contenedor:
+
+```bash
+# Abrir bash interactivo
+docker run -it -v $(pwd)/output:/app/output rtx-cornell-box bash
+
+# Dentro del contenedor puedes:
+# - Ejecutar: python main.py
+# - Modificar código temporalmente
+# - Inspeccionar archivos: ls -la
+# - Verificar dependencias: pip list
+```
+
+### Características del Dockerfile
+
+- ✅ **Simple y Eficiente**: Una sola etapa fácil de entender y modificar
+- ✅ **Seguridad**: Ejecuta como usuario no-root (`appuser`)
+- ✅ **Python 3.11**: Versión moderna y estable (slim-bookworm)
+- ✅ **Layer caching**: Optimizado para builds rápidos
+- ✅ **Volúmenes**: Persistencia de imágenes renderizadas
+
+### Troubleshooting Docker
+
+**Error: "Cannot connect to Docker daemon"**
+```bash
+# Asegúrate de que Docker Desktop esté ejecutándose
+# En macOS/Windows: Abre Docker Desktop desde aplicaciones
+```
+
+**Error: "Permission denied" en Linux**
+```bash
+# Añade tu usuario al grupo docker
+sudo usermod -aG docker $USER
+# Cierra sesión y vuelve a iniciar
+```
+
+**Imagen no se guarda en output/**
+```bash
+# Verifica que el directorio output/ existe
+mkdir -p output
+
+# Asegúrate de usar la flag -v correctamente
+docker run -v $(pwd)/output:/app/output rtx-cornell-box
 ```
 
 ---

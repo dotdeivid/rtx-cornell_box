@@ -1,6 +1,6 @@
-# 🎨 Ray Tracer - Cornell Box
+# Ray Tracer - Cornell Box
 
-Un **path tracer fotorealista** implementado en Python puro que simula física de luz para renderizar la icónica Cornell Box con materiales avanzados (vidrio, metal, difuso) y modelos 3D complejos.
+Un **path tracer fotorrealista** implementado en Python que simula la física de la luz para renderizar la icónica Cornell Box con materiales avanzados (vidrio, metal, difuso) y modelos 3D complejos.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
@@ -8,620 +8,541 @@ Un **path tracer fotorealista** implementado en Python puro que simula física d
 
 ---
 
-## 📋 Tabla de Contenidos
+## Tabla de Contenidos
 
-- [Características](#-características)
-- [¿Qué hace este proyecto?](#-qué-hace-este-proyecto)
-- [¿Cómo funciona?](#-cómo-funciona)
-- [Instalación](#-instalación)
-- [Instalación con Docker](#-instalación-con-docker-recomendado)
-- [Uso](#-uso)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Clases Principales](#-clases-principales)
-- [Configuración](#-configuración)
-- [Ejemplos](#-ejemplos)
-- [Documentación](#-documentación)
-- [Rendimiento](#-rendimiento)
-- [Referencias](#-referencias)
+- [Características](#características)
+- [¿Qué hace este proyecto?](#qué-hace-este-proyecto)
+- [¿Cómo funciona?](#cómo-funciona)
+- [Instalación](#instalación)
+- [Uso](#uso)
+- [Configuraciones de Rendering](#configuraciones-de-rendering)
+- [Efecto de los Parámetros](#efecto-de-los-parámetros)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Clases Principales](#clases-principales)
+- [Documentación](#documentación)
+- [Rendimiento](#rendimiento)
+- [Referencias](#referencias)
 
 ---
 
-## ✨ Características
+## Características
 
 ### Técnicas de Rendering
-- ✅ **Path Tracing**: Integración Monte Carlo de la ecuación de rendering
-- ✅ **Next Event Estimation (NEE)**: Muestreo directo de luces para reducir ruido
-- ✅ **Stratified Sampling**: Antialiasing con cuadrícula sub-píxel
-- ✅ **BVH (Bounding Volume Hierarchy)**: Aceleración de intersecciones (9000× más rápido)
+- **Path Tracing**: Integración Monte Carlo de la ecuación de rendering
+- **Next Event Estimation (NEE)**: Muestreo directo de luces para reducir ruido 10-100×
+- **Stratified Sampling**: Antialiasing con cuadrícula sub-píxel
+- **BVH (Bounding Volume Hierarchy)**: Aceleración O(log N) de intersecciones
 
 ### Materiales Físicamente Basados
-- 🎨 **Difusos (Lambertian)**: Superficies mates con reflexión coseno-ponderada
-- 🪞 **Metales**: Reflexión especular con rugosidad ajustable
-- 💎 **Dieléctricos**: Vidrio/agua con refracción realista (Ley de Snell + Fresnel)
-- 💡 **Emisores**: Luces de área para sombras suaves
+- **Difusos (Lambertian)**: Superficies mates con reflexión coseno-ponderada
+- **Metales**: Reflexión especular con rugosidad ajustable (`fuzz`)
+- **Dieléctricos**: Vidrio/agua con refracción (Ley de Snell + Fresnel-Schlick)
+- **Emisores**: Luces de área para sombras suaves con penumbra
 
 ### Cámara Avanzada
-- 📷 **Profundidad de Campo (DOF)**: Desenfoque realista tipo bokeh
-- 🔭 **Field of View ajustable**: Control total de perspectiva
-- 🎯 **Distancia focal configurable**: Control artístico del enfoque
+- **Profundidad de Campo (DOF)**: Desenfoque bokeh físicamente correcto
+- **Field of View ajustable**: Teleobjetivo a gran angular
+- **Distancia focal configurable**: Control artístico del plano de enfoque
 
 ### Optimizaciones
-- ⚡ **Renderizado paralelo**: Multi-core con `multiprocessing`
-- 🌲 **BVH Tree**: O(log N) intersecciones vs O(N) bruto
-- 🎨 **Gamma Correction**: Corrección 2.2 para displays sRGB
+- **Renderizado paralelo**: Multi-core con `multiprocessing` (speedup ~lineal)
+- **BVH Tree**: O(log N) intersecciones vs O(N) fuerza bruta
+- **Gamma Correction**: Corrección sRGB 2.2 para displays modernos
 
 ---
 
-## 🎯 ¿Qué hace este proyecto?
+## ¿Qué hace este proyecto?
 
-Este ray tracer simula **cómo la luz real rebota** en una escena 3D para generar imágenes fotorealistas. A diferencia de rasterización (OpenGL/DirectX), trazamos rayos desde la cámara hacia cada píxel, siguiendo su trayectoria mientras rebota en objetos, refracta a través de vidrio y finalmente llega a fuentes de luz.
+Este ray tracer simula cómo la luz real rebota en una escena 3D para generar imágenes fotorrealistas. A diferencia de rasterización (OpenGL/DirectX), trazamos rayos desde la cámara hacia cada píxel, seguimos su trayectoria mientras rebotan en objetos, refractan a través de vidrio y finalmente llegan a fuentes de luz.
 
 ### Escenas Disponibles
 
-1. **Cornell Box con Esferas** (`mode="spheres"`)
-   - Escena clásica de validación con 2 esferas (vidrio + metal)
-   - Efectos: color bleeding, caustics, reflexiones especulares
+**Cornell Box con Esferas** (`SceneMode.SPHERES`)
+- Escena clásica de validación con esfera de vidrio y esfera metálica
+- Efectos: color bleeding, caustics, reflexiones especulares, sombras suaves
 
-2. **Cornell Box con Modelo 3D** (`mode="bunny"`)
-   - Stanford Bunny de vidrio (~69,000 triángulos)
-   - Demuestra BVH rendering de modelos complejos
+**Cornell Box con Bunny** (`SceneMode.BUNNY`)
+- Stanford Bunny de vidrio (~69,000 triángulos)
+- Demuestra BVH rendering de modelos complejos
 
 ---
 
-## 🔬 ¿Cómo funciona?
+## ¿Cómo funciona?
 
 ### Pipeline de Rendering
 
 ```
-1. Configuración de Cámara
-   │
-   ├─→ Define posición, FOV, apertura DOF
-   │
-2. Por cada píxel (400×400 = 160,000 píxels)
-   │
-   ├─→ Genera N muestras aleatorias (stratified sampling)
-   │   │
-   │   ├─→ Por cada muestra:
-   │   │   │
-   │   │   ├─→ Lanza rayo desde cámara (con offset DOF)
-   │   │   │
-   │   │   ├─→ Recursión Path Tracing (hasta depth=8)
-   │   │   │   │
-   │   │   │   ├─→ Intersecta con escena (BVH acelera)
-   │   │   │   │
-   │   │   │   ├─→ Si hit material:
-   │   │   │   │   ├─ Difuso → NEE + rebote aleatorio
-   │   │   │   │   ├─ Metal → Reflexión especular + fuzz
-   │   │   │   │   └─ Vidrio → Refracción/reflexión (Fresnel)
-   │   │   │   │
-   │   │   │   └─→ Acumula color × atenuación
-   │   │   │
-   │   │   └─→ Promedia muestras
-   │   │
-   │   └─→ Gamma correction (2.2)
-   │
-3. Guarda imagen PNG
+1. Configuración
+   ├─ RenderConfig: resolución, samples, profundidad, salida
+   └─ CameraConfig: posición, FOV, apertura DOF
+
+2. Por cada píxel
+   └─ N muestras (stratified sampling)
+       └─ Por cada muestra:
+           ├─ Rayo desde cámara (con offset DOF en disco de apertura)
+           └─ color_ray() recursivo (hasta max_depth)
+               ├─ Intersección con escena (BVH: O(log N))
+               ├─ Emisor  → retornar emisión directamente
+               ├─ Metal   → reflexión especular + fuzz
+               ├─ Vidrio  → refracción/reflexión según Fresnel
+               └─ Difuso  → NEE (luz directa) + rebote aleatorio (luz indirecta)
+
+3. Post-proceso
+   ├─ Promedio de muestras
+   ├─ Gamma correction (rgb^(1/2.2))
+   └─ Guardar PNG
 ```
 
 ### Física Implementada
 
-- **Ley de Snell**: `η₁ sin(θ₁) = η₂ sin(θ₂)` para refracción
-- **Aproximación de Schlick**: Fresnel simplificado para reflexión/refracción
-- **BRDF Lambertiano**: `ρ/π × cos(θ)` para materiales difusos
-- **Ley de Lambert**: Intensidad proporcional a `cos(θ)` del ángulo de incidencia
+- **Ley de Snell**: `η₁ sin(θ₁) = η₂ sin(θ₂)` — refracción en dieléctricos
+- **Fresnel-Schlick**: `R(θ) = R₀ + (1-R₀)(1-cosθ)⁵` — reflexión probabilística
+- **BRDF Lambertiano**: `ρ/π` — materiales difusos físicamente correctos
+- **Ley de Lambert**: intensidad proporcional a `cos(θ)` del ángulo de incidencia
 
 ---
 
-## 🚀 Instalación
+## Instalación
 
 ### Requisitos
+
 - Python 3.8 o superior
-- ~500 MB de RAM para renderizado
-- Multi-core CPU recomendado
+- ~500 MB de RAM para renderizado estándar
+- CPU multi-core recomendado
 
 ### Pasos
 
 ```bash
 # 1. Clonar repositorio
-git clone https://github.com/tuusuario/rtx-cornell_box.git
+git clone https://github.com/dotdeivid/rtx-cornell_box.git
 cd rtx-cornell_box
 
 # 2. Crear entorno virtual (recomendado)
 python3 -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 3. Instalar dependencias
 pip install -r requirements.txt
 
-# 4. Verificar instalación
+# 4. Renderizar
 python main.py
 ```
 
 ### Dependencias
 
-```txt
+```
 numpy>=1.21.0    # Álgebra vectorial y arrays
 Pillow>=9.0.0    # Guardar imágenes PNG
 ```
 
 ---
 
-## 🐳 Instalación con Docker (Recomendado)
-
-Docker permite ejecutar el proyecto en **cualquier ordenador** sin preocuparte por dependencias de Python, versiones o configuraciones del sistema. Es la forma más rápida y confiable de empezar.
-
-### Requisitos
-- Docker Desktop instalado ([Descargar aquí](https://www.docker.com/products/docker-desktop))
-- ~500 MB de espacio en disco
-
-### Construcción de la Imagen
-
-```bash
-# 1. Clonar repositorio
-git clone https://github.com/tuusuario/rtx-cornell_box.git
-cd rtx-cornell_box
-
-# 2. Construir imagen Docker
-docker build -t rtx-cornell-box .
-
-# Verificar que la imagen se creó correctamente
-docker images rtx-cornell-box
-```
-
-### Uso Básico
-
-```bash
-# Renderizar con configuración por defecto
-# La imagen se guardará en output/bokeh.png
-docker run -v $(pwd)/output:/app/output rtx-cornell-box
-
-# En Windows PowerShell:
-docker run -v ${PWD}/output:/app/output rtx-cornell-box
-
-# En Windows CMD:
-docker run -v %cd%/output:/app/output rtx-cornell-box
-```
-
-### Configuración Avanzada con Variables de Entorno
-
-Puedes ajustar los parámetros de renderizado sin modificar el código:
-
-```bash
-# Renderizado de alta calidad (más lento)
-docker run \
-  -e RTX_WIDTH=800 \
-  -e RTX_HEIGHT=800 \
-  -e RTX_SAMPLES=1000 \
-  -e RTX_DEPTH=12 \
-  -v $(pwd)/output:/app/output \
-  rtx-cornell-box
-
-# Preview rápido (menor calidad)
-docker run \
-  -e RTX_WIDTH=400 \
-  -e RTX_HEIGHT=400 \
-  -e RTX_SAMPLES=100 \
-  -e RTX_DEPTH=4 \
-  -v $(pwd)/output:/app/output \
-  rtx-cornell-box
-```
-
-### Variables de Entorno Disponibles
-
-| Variable | Descripción | Valor por Defecto |
-|----------|-------------|-------------------|
-| `RTX_WIDTH` | Ancho de imagen en píxeles | `400` |
-| `RTX_HEIGHT` | Alto de imagen en píxeles | `400` |
-| `RTX_SAMPLES` | Muestras por píxel (calidad) | `400` |
-| `RTX_DEPTH` | Rebotes máximos de luz | `8` |
-| `RTX_NUM_WORKERS` | Núcleos CPU (0=auto) | `0` |
-
-### Modo Interactivo
-
-Para desarrollo o debugging, puedes acceder a un shell dentro del contenedor:
-
-```bash
-# Abrir bash interactivo
-docker run -it -v $(pwd)/output:/app/output rtx-cornell-box bash
-
-# Dentro del contenedor puedes:
-# - Ejecutar: python main.py
-# - Modificar código temporalmente
-# - Inspeccionar archivos: ls -la
-# - Verificar dependencias: pip list
-```
-
-### Características del Dockerfile
-
-- ✅ **Simple y Eficiente**: Una sola etapa fácil de entender y modificar
-- ✅ **Seguridad**: Ejecuta como usuario no-root (`appuser`)
-- ✅ **Python 3.11**: Versión moderna y estable (slim-bookworm)
-- ✅ **Layer caching**: Optimizado para builds rápidos
-- ✅ **Volúmenes**: Persistencia de imágenes renderizadas
-
-### Troubleshooting Docker
-
-**Error: "Cannot connect to Docker daemon"**
-```bash
-# Asegúrate de que Docker Desktop esté ejecutándose
-# En macOS/Windows: Abre Docker Desktop desde aplicaciones
-```
-
-**Error: "Permission denied" en Linux**
-```bash
-# Añade tu usuario al grupo docker
-sudo usermod -aG docker $USER
-# Cierra sesión y vuelve a iniciar
-```
-
-**Imagen no se guarda en output/**
-```bash
-# Verifica que el directorio output/ existe
-mkdir -p output
-
-# Asegúrate de usar la flag -v correctamente
-docker run -v $(pwd)/output:/app/output rtx-cornell-box
-```
-
----
-
-## 💻 Uso
+## Uso
 
 ### Renderizado Básico
 
 ```bash
-# Renderizar Cornell Box con bunny (configuración por defecto)
 python main.py
-
-# La imagen se guarda en: output/bokeh.png
+# Imagen guardada en: output/result_render.png
 ```
 
 ### Cambiar Escena
 
-Edita `main.py` línea ~988:
+Edita `main.py`:
 
 ```python
-# Opción 1: Cornell Box con esferas
-world, lights = render_obj(mode="spheres")
+from src.scene import SceneMode, create_cornell_box_scene
 
-# Opción 2: Cornell Box con bunny de vidrio
-world, lights = render_obj(mode="bunny")
+# Cornell Box con esferas (vidrio + metal)
+world, lights = create_cornell_box_scene(SceneMode.SPHERES)
+
+# Cornell Box con Stanford Bunny de vidrio
+world, lights = create_cornell_box_scene(SceneMode.BUNNY)
 ```
 
 ### Ajustar Calidad
 
-Edita `main.py` función `render()` línea ~945:
-
 ```python
-def render():
-    # Resolución
-    width, height = 400, 400     # Aumentar para más detalle
-    
-    # Calidad (samples × depth = complejidad)
-    samples = 400   # Muestras por píxel (↑ = menos ruido, más tiempo)
-    depth = 8       # Rebotes máximos (↑ = más iluminación indirecta)
-    
-    # Depth of Field
-    aperture = 20.0  # ↑ = más desenfoque
-    fov = 40.0       # Field of view en grados
+from src.config import RenderConfig
+from pathlib import Path
+
+render_config = RenderConfig(
+    width=400,          # Ancho en píxeles
+    height=400,         # Alto en píxeles
+    samples=400,        # Muestras Monte Carlo por píxel
+    max_depth=8,        # Máximo de rebotes de luz
+    use_parallel=True,  # Renderizado multi-core
+    gamma=2.2,          # Corrección gamma sRGB
+    output_path=Path("output/result_render.png"),
+)
 ```
 
-### Renderizado Paralelo
+### Configurar Cámara
 
 ```python
-# En main.py línea ~68
-USE_PARALLEL = True   # Multi-core (recomendado)
-USE_PARALLEL = False  # Un solo núcleo (debug)
+from src.config import CameraConfig
+
+camera_config = CameraConfig(
+    origin=Vec3(278, 278, -800),  # Posición de la cámara
+    lookat=Vec3(278, 278, 278),   # Punto al que apunta
+    vup=Vec3(0, 1, 0),            # Vector "arriba" del mundo
+    fov=40.0,                      # Field of view en grados
+    aperture=20.0,                 # Apertura de lente (DOF)
+    focus_distance=None,           # None = auto (foco en lookat)
+)
 ```
 
 ---
 
-## 📁 Estructura del Proyecto
+## Configuraciones de Rendering
+
+Estas tres configuraciones cubren los casos de uso principales. Cópialas directamente en `main.py`.
+
+### Baja Calidad — Vista Previa Rápida
+
+Para verificar composición y cambios de escena sin esperar. El ruido es visible pero la estructura general es clara.
+
+```python
+render_config = RenderConfig(
+    width=200,
+    height=200,
+    samples=50,
+    max_depth=4,
+    use_parallel=True,
+    gamma=2.2,
+    output_path=Path("output/preview.png"),
+)
+
+camera_config = CameraConfig(
+    fov=40.0,
+    aperture=0.0,   # Sin DOF: todo enfocado, más limpio a pocos samples
+)
+```
+
+| Atributo | Valor | Impacto |
+|----------|-------|---------|
+| Resolución | 200×200 | 4× menos píxeles que 400×400 |
+| Samples | 50 | Ruido visible (~20% de error MC) |
+| Depth | 4 | Solo 4 rebotes — luz indirecta básica |
+| Tiempo estimado | ~5-15 seg | Depende de CPU |
+
+---
+
+### Buena Calidad — Uso General
+
+Balance entre calidad y tiempo. Adecuada para evaluar materiales, iluminación e iteraciones de diseño.
+
+```python
+render_config = RenderConfig(
+    width=400,
+    height=400,
+    samples=400,
+    max_depth=8,
+    use_parallel=True,
+    gamma=2.2,
+    output_path=Path("output/render.png"),
+)
+
+camera_config = CameraConfig(
+    fov=40.0,
+    aperture=20.0,   # DOF moderado
+    focus_distance=None,
+)
+```
+
+| Atributo | Valor | Impacto |
+|----------|-------|---------|
+| Resolución | 400×400 | Detalle suficiente para evaluar |
+| Samples | 400 | Ruido bajo (~5% de error MC) |
+| Depth | 8 | Color bleeding visible, caustics básicas |
+| Tiempo estimado | ~1.5-3 min | En CPU de 8 núcleos |
+
+---
+
+### Ultra Calidad — Producción
+
+Para resultado final. Ruido casi imperceptible, color bleeding rico, sombras suaves definidas.
+
+```python
+render_config = RenderConfig(
+    width=800,
+    height=800,
+    samples=2000,
+    max_depth=12,
+    use_parallel=True,
+    gamma=2.2,
+    output_path=Path("output/ultra.png"),
+)
+
+camera_config = CameraConfig(
+    fov=40.0,
+    aperture=20.0,
+    focus_distance=None,
+)
+```
+
+| Atributo | Valor | Impacto |
+|----------|-------|---------|
+| Resolución | 800×800 | 4× más detalle que 400×400 |
+| Samples | 2000 | Ruido muy bajo (~2.2% de error MC) |
+| Depth | 12 | Iluminación indirecta convergida, caustics completas |
+| Tiempo estimado | ~30-60 min | En CPU de 8 núcleos |
+
+---
+
+### Tabla Comparativa
+
+| Preset | Resolución | Samples | Depth | Tiempo* | Error MC |
+|--------|-----------|---------|-------|---------|----------|
+| **Baja** | 200×200 | 50 | 4 | ~10 seg | ~14% |
+| **Buena** | 400×400 | 400 | 8 | ~2 min | ~5% |
+| **Ultra** | 800×800 | 2000 | 12 | ~45 min | ~2.2% |
+
+*Tiempos aproximados en CPU de 8 núcleos. El error MC sigue la fórmula `1/√samples`.
+
+---
+
+## Efecto de los Parámetros
+
+Entender qué cambia cada parámetro permite combinarlos para predecir el resultado antes de renderizar.
+
+### `samples` — Muestras por píxel
+
+Controla cuántos rayos se promedian por píxel. Es el parámetro que más afecta la **limpieza de la imagen**.
+
+```
+samples=50   → Ruido granulado visible, manchas en sombras
+samples=200  → Ruido moderado, estructura clara
+samples=400  → Ruido bajo, aceptable para evaluación
+samples=1000 → Ruido muy bajo, zonas oscuras limpias
+samples=4000 → Casi sin ruido, resultado de producción
+```
+
+**Relación**: el error cae como `1/√samples`. Para reducir el ruido a la mitad, se necesitan **4× más samples**. Es el parámetro más costoso en tiempo.
+
+* **Cuándo bajar**: en iteraciones de diseño donde se evalúa composición, no calidad final.
+* **Cuándo subir**: en el render final, especialmente si hay zonas oscuras (interior de vidrio, sombras profundas).
+
+---
+
+### `max_depth` — Rebotes máximos de luz
+
+Limita cuántas veces puede rebotar un rayo antes de retornar negro. Afecta la **riqueza de la iluminación indirecta**.
+
+```
+max_depth=2  → Solo luz directa + un rebote. Escena oscura, sin color bleeding.
+max_depth=4  → Dos rebotes indirectos. Color bleeding incipiente.
+max_depth=8  → Cornell Box converge bien aquí. Color bleeding visible, caustics básicas.
+max_depth=12 → Caustics completas, tonos medios más ricos.
+max_depth=16 → Beneficio marginal (<1% de diferencia visual).
+```
+
+**Regla práctica**:
+- Escenas abiertas (cielo visible): `depth=4` es suficiente
+- Cornell Box (espacio cerrado): `depth=8` mínimo, `depth=12` para producción
+- Escenas con vidrio grueso (muchos rebotes internos): `depth=12+`
+
+**Cuándo importa más**: en escenas cerradas, con vidrio, y cuando las zonas oscuras se ven demasiado negras. Si la escena ya está bien iluminada a depth=6, subir a 12 cambiará poco.
+
+---
+
+### `width` / `height` — Resolución
+
+Determina el **tamaño y detalle** de la imagen de salida. Afecta el tiempo de forma cuadrática: duplicar la resolución cuadruplica los píxeles a renderizar.
+
+```
+200×200  →    40,000 píxeles (pruebas rápidas)
+400×400  →   160,000 píxeles (evaluación)
+800×800  →   640,000 píxeles (producción)
+1920×1080 → 2,073,600 píxeles (muy costoso)
+```
+
+El aspecto ratio afecta la cámara: `aspect_ratio = width / height` se pasa automáticamente al viewport.
+
+---
+
+### `gamma` — Corrección gamma
+
+Ajusta cómo se convierten los colores lineales del renderer al espacio de color del display.
+
+```
+gamma=1.0  → Sin corrección. Imagen visualmente oscura (incorrecta en monitores sRGB).
+gamma=2.2  → Estándar sRGB. Correcto para la mayoría de monitores modernos.
+gamma=1.8  → Estándar macOS antiguo (menos común hoy).
+```
+
+**No cambiar** salvo que se sepa con certeza que el display usa un espacio de color diferente. `2.2` es el correcto para prácticamente cualquier monitor moderno.
+
+---
+
+### `aperture` — Apertura de lente (DOF)
+
+Simula el diafragma de una cámara real. A mayor apertura, mayor profundidad de campo y círculos de bokeh más grandes.
+
+```
+aperture=0    → Cámara pinhole. Todo enfocado. Sin bokeh.
+aperture=5    → DOF muy sutil. Apenas perceptible.
+aperture=20   → DOF moderado (default Cornell Box).
+aperture=60   → Bokeh pronunciado. Solo el plano focal es nítido.
+```
+
+**Interacción con `focus_distance`**: el plano focal (zona nítida) está en la distancia `focus_distance` desde la cámara. Con `focus_distance=None` se enfoca automáticamente en el punto `lookat`.
+
+Si `aperture=0`, `focus_distance` no tiene efecto visual.
+
+---
+
+### `fov` — Field of View (ángulo de visión)
+
+Controla cuánto "ve" la cámara verticalmente. Afecta la perspectiva y distorsión de la imagen.
+
+```
+fov=20°  → Teleobjetivo. Objetos grandes, poca distorsión. Perspectiva comprimida.
+fov=40°  → Normal para Cornell Box. Balance entre tamaño y distorsión.
+fov=60°  → Gran angular suave. Más contexto visible.
+fov=90°  → Gran angular pronunciado. Distorsión en bordes visible.
+```
+
+**Regla**: para la Cornell Box, `fov=40°` está calibrado para que la caja llene bien el frame desde la posición de cámara por defecto (`z=-800`). Cambiar el FOV sin mover la cámara cambia el encuadre.
+
+---
+
+### Combinando Parámetros — Predicción del Resultado
+
+| Objetivo | Configuración |
+|----------|--------------|
+| Prueba rápida de composición | `samples=50`, `max_depth=4`, `aperture=0` |
+| Evaluar materiales y colores | `samples=200`, `max_depth=8`, `aperture=0` |
+| Evaluar profundidad de campo | `samples=400`, `max_depth=8`, `aperture=20-60` |
+| Imagen final limpia | `samples=2000`, `max_depth=12`, todo habilitado |
+| Escena con mucho vidrio | `max_depth=12+`, `samples` alto (caustics son ruidosas) |
+| Escena oscura / sombras profundas | `samples` alto (zonas oscuras convergen lento) |
+| Solo luz directa (prueba NEE) | `max_depth=1`, `samples=50` |
+
+**Ejemplo de razonamiento**: si la imagen se ve bien iluminada pero granulada → subir `samples`. Si las sombras se ven demasiado negras → subir `max_depth`. Si el bokeh es muy agresivo y distrae → bajar `aperture`. Si la escena se ve aplanada → subir `max_depth` (falta iluminación indirecta).
+
+---
+
+## Estructura del Proyecto
 
 ```
 rtx-cornell_box/
 │
-├── main.py                 # 🎬 Punto de entrada principal
-│   ├─ render()             # Función principal de renderizado
-│   ├─ render_obj()         # Configurador de escenas
-│   ├─ render_row()         # Worker paralelo (renderiza 1 fila)
-│   ├─ color_ray()          # Path tracer recursivo
-│   ├─ calculate_nee()      # Next Event Estimation
-│   ├─ refract()            # Ley de Snell
-│   └─ reflectance()        # Fresnel-Schlick
+├── main.py                     # Punto de entrada principal
 │
-├── src/                    # 📦 Módulos core
-│   ├── vector.py           # Vec3: Álgebra vectorial 3D
-│   ├── ray.py              # Ray: Rayos paramétricos
-│   ├── geometry.py         # Primitivas geométricas y BVH
-│   │   ├─ Sphere           # Esferas (analítico)
-│   │   ├─ Quad             # Cuadriláteros (paredes, luces)
-│   │   ├─ Triangle         # Triángulos (modelos .obj)
-│   │   ├─ AABB             # Bounding boxes para BVH
-│   │   └─ BVHNode          # Árbol de aceleración
-│   └── utils.py            # Utilidades (sampling, load OBJ)
+├── src/
+│   ├── vector.py               # Vec3: álgebra vectorial 3D
+│   ├── ray.py                  # Ray: rayos paramétricos
+│   │
+│   ├── geometry/               # Primitivas geométricas
+│   │   ├── base.py             # Geometry ABC
+│   │   ├── hit_record.py       # HitRecord (dataclass)
+│   │   ├── sphere.py           # Esferas
+│   │   ├── quad.py             # Cuadriláteros (paredes, luces)
+│   │   ├── triangle.py         # Triángulos (modelos .obj)
+│   │   ├── aabb.py             # Bounding boxes
+│   │   └── bvh.py              # BVH Tree
+│   │
+│   ├── materials/              # Sistema de materiales (ABC)
+│   │   ├── base.py             # Material ABC
+│   │   ├── diffuse.py          # DiffuseMaterial (Lambertian)
+│   │   ├── metal.py            # MetalMaterial (especular)
+│   │   ├── dielectric.py       # DielectricMaterial (refracción)
+│   │   └── emissive.py         # EmissiveMaterial (luces de área)
+│   │
+│   ├── renderer/               # Motor de rendering
+│   │   ├── path_tracer.py      # Path tracer + NEE
+│   │   └── renderer.py         # Renderer principal
+│   │
+│   ├── camera/
+│   │   └── camera.py           # Cámara thin-lens con DOF
+│   │
+│   ├── scene/
+│   │   └── cornell_box.py      # Constructores de escena
+│   │
+│   ├── config/
+│   │   ├── render_config.py    # RenderConfig (dataclass)
+│   │   └── camera_config.py    # CameraConfig (dataclass)
+│   │
+│   └── utils.py                # Sampling Monte Carlo, load_obj
 │
-├── models/                 # 🐰 Modelos 3D (.obj)
-│   └── bunny.obj           # Stanford Bunny (~69K triángulos)
+├── models/
+│   └── bunny.obj               # Stanford Bunny (~69K triángulos)
 │
-├── output/                 # 🖼️ Imágenes renderizadas
-│   └── bokeh.png           # Imagen de salida
-│
-├── docs/                   # 📚 Documentación detallada
-│   ├── main_guide.md       # Guía completa de main.py
-│   ├── vector_guide.md     # Matemáticas de Vec3
-│   ├── geometry_guide.md   # Primitivas y BVH
-│   ├── ray_guide.md        # Rayos y trazado
-│   └── utils_guide.md      # Utilidades y sampling
-│
-├── requirements.txt        # 📋 Dependencias Python
-├── .gitignore              # 🚫 Archivos ignorados por Git
-├── Dockerfile              # 🐳 Contenedor Docker (opcional)
-└── README.md               # 📖 Este archivo
+├── output/                     # Imágenes renderizadas
+├── tests/                      # Tests unitarios
+├── docs_nuevo/                 # Documentación completa
+├── requirements.txt
+└── Dockerfile
 ```
 
 ---
 
-## 🧩 Clases Principales
-
-### `Vec3` (src/vector.py)
-**Qué hace:** Representa vectores 3D (posiciones, direcciones, colores).
-
-```python
-v1 = Vec3(1, 2, 3)
-v2 = Vec3(4, 5, 6)
-
-# Operaciones
-v3 = v1 + v2           # Suma
-v4 = v1 * 2            # Escalar
-dot = v1.dot(v2)       # Producto punto
-cross = v1.cross(v2)   # Producto cruz
-v_norm = v1.normalize() # Vector unitario
-```
-
-**Uso:** Base de toda la matemática del ray tracer (física, geometría, color).
-
----
-
-### `Ray` (src/ray.py)
-**Qué hace:** Representa un rayo semi-infinito.
-
-```python
-ray = Ray(origin=Vec3(0,0,0), direction=Vec3(0,0,1))
-point = ray.point_at(t=5.0)  # Punto en rayo a distancia t
-```
-
-**Ecuación:** `P(t) = origin + t × direction`
-
-**Uso:** Trazado de rayos (cámara → píxel, shadow rays, rebotes).
-
----
-
-### `Sphere` (src/geometry.py)
-**Qué hace:** Esfera que puede intersectar rayos.
-
-```python
-sphere = Sphere(
-    center=Vec3(0, 0, 0),
-    radius=1.0,
-    color=Vec3(0.8, 0.2, 0.2),
-    is_metal=True,
-    fuzz=0.1
-)
-hit = sphere.hit(ray, t_min=0.001, t_max=float('inf'))
-```
-
-**Intersección:** Resuelve ecuación cuadrática `|origin + t×dir - center|² = r²`
-
----
-
-### `Quad` (src/geometry.py)
-**Qué hace:** Cuadrilátero (paredes Cornell Box, luces de área).
-
-```python
-# Pared izquierda de Cornell Box
-wall = Quad(
-    Q=Vec3(555, 0, 0),      # Esquina
-    u=Vec3(0, 555, 0),      # Lado 1
-    v=Vec3(0, 0, 555),      # Lado 2
-    color=Vec3(0.12, 0.45, 0.15)  # Verde
-)
-
-# Luz de área
-light = Quad(..., emission=Vec3(15, 15, 15))
-```
-
-**Uso:** Paredes, techo, piso, luces emisoras.
-
----
-
-### `Triangle` (src/geometry.py)
-**Qué hace:** Triángulo para modelos 3D complejos.
-
-```python
-tri = Triangle(
-    v0=Vec3(0, 0, 0),
-    v1=Vec3(1, 0, 0),
-    v2=Vec3(0, 1, 0),
-    color=Vec3(0.9, 0.9, 0.9),
-    is_dielectric=True,
-    ior=1.5
-)
-```
-
-**Intersección:** Test de Möller-Trumbore (O(1), rápido).
-
----
-
-### `BVHNode` (src/geometry.py)
-**Qué hace:** Árbol binario para acelerar intersecciones ray-escena.
-
-```python
-# Crear BVH de lista de objetos
-objects = [sphere1, sphere2, quad1, ...]
-bvh = BVHNode.create(objects)
-
-# Intersectar rayo (O(log N) vs O(N))
-hit = bvh.hit(ray, 0.001, float('inf'))
-```
-
-**Algoritmo:**
-1. Divide objetos por eje más largo del bounding box
-2. Recursivamente construye subárboles
-3. En intersección: prueba AABB primero (rápido), si hit → prueba hijos
-
----
-
-## ⚙️ Configuración
-
-### Calidad vs Tiempo de Renderizado
-
-| Preset | Samples | Depth | Tiempo* | Calidad |
-|--------|---------|-------|---------|---------|
-| **Preview** | 100 | 4 | ~30 seg | Ruidoso, útil para pruebas |
-| **Medium** | 400 | 8 | ~2 min | Balance (default) |
-| **High** | 1000 | 12 | ~8 min | Baja ruido, buena convergencia |
-| **Ultra** | 4000 | 16 | ~30 min | Producción, muy limpio |
-
-*Tiempos aproximados en CPU de 8 núcleos @ 3.5 GHz
-
-### Parámetros de Cámara
-
-```python
-# En render() función
-camera_origin = Vec3(278, 278, -800)  # Posición de cámara
-lookat = Vec3(278, 278, 278)          # Punto objetivo
-fov = 40.0                             # Field of view (grados)
-aperture = 20.0                        # Tamaño de apertura (DOF)
-dist_to_focus = (camera_origin - lookat).length()  # Plano focal
-```
-
-**Efectos de aperture:**
-- `aperture = 0`: Todo enfocado (pinhole camera)
-- `aperture = 10`: DOF sutil
-- `aperture = 20`: Bokeh moderado (default)
-- `aperture = 50+`: Desenfoque extremo
-
----
-
-## 🖼️ Ejemplos
-
-### Cornell Box con Esferas
-
-```python
-world, lights = render_obj(mode="spheres")
-```
-
-**Efectos esperados:**
-- ✨ Caustics: Luz focalizada por esfera de vidrio
-- 🎨 Color bleeding: Verde/rojo sangran en paredes blancas
-- 🌑 Soft shadows: Sombras suaves por luz de área
-- 🪞 Specular reflections: Esfera metálica refleja escena
-
-### Cornell Box con Bunny
-
-```python
-world, lights = render_obj(mode="bunny")
-```
-
-**Incluye:**
-- 69,000 triángulos de Stanford Bunny
-- Material de vidrio (IOR 1.5)
-- BVH rendering (esencial para performance)
-
----
-
-## 📚 Documentación
-
-Para guías detalladas con matemáticas y ejemplos:
-
-- [`docs/main_guide.md`](docs/main_guide.md) - Pipeline completo de rendering
-- [`docs/vector_guide.md`](docs/vector_guide.md) - Álgebra vectorial y operaciones
-- [`docs/geometry_guide.md`](docs/geometry_guide.md) - Primitivas y BVH
-- [`docs/ray_guide.md`](docs/ray_guide.md) - Trazado de rayos
-- [`docs/utils_guide.md`](docs/utils_guide.md) - Sampling y utilidades
-
----
-
-## ⚡ Rendimiento
+## Rendimiento
 
 ### Optimizaciones Implementadas
 
-1. **BVH Tree**: 
-   - Sin BVH: O(N) = 69,000 tests por rayo
-   - Con BVH: O(log N) = ~16 tests por rayo
-   - **Speedup: ~9000×**
+**BVH Tree**
+- Sin BVH: O(N) — 69,000 tests por rayo (Stanford Bunny)
+- Con BVH: O(log N) — ~17 tests por rayo
+- Speedup: ~4,000×
 
-2. **Renderizado Paralelo**:
-   - Usa todos los núcleos de CPU disponibles
-   - Speedup lineal con número de cores
+**Renderizado Paralelo**
+- `multiprocessing.Pool` — una fila por worker, todos los núcleos disponibles
+- Speedup ~lineal: 8 cores → ~7× más rápido
 
-3. **Stratified Sampling**:
-   - Reduce ruido vs random puro
-   - Mejor convergencia con menos muestras
+**Stratified Sampling**
+- Divide cada píxel en cuadrícula √samples × √samples
+- 30-50% menos ruido que muestreo aleatorio puro para el mismo N
 
-### Benchmarks (Intel i7-8750H @ 2.20GHz, 6 cores)
+### Benchmarks (referencia: 8 núcleos @ 3.5 GHz)
 
 | Escena | Resolución | Samples | Depth | Tiempo |
 |--------|-----------|---------|-------|--------|
 | Spheres | 400×400 | 400 | 8 | ~1.5 min |
 | Bunny | 400×400 | 400 | 8 | ~2.3 min |
-| Ultra Quality | 800×800 | 2000 | 12 | ~45 min |
+| Spheres (ultra) | 800×800 | 2000 | 12 | ~45 min |
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
-### Error: "Modelo cargado: 0 triángulos"
-- Verifica que `models/bunny.obj` existe
-- Descarga modelos de: http://www.graphics.stanford.edu/data/3Dscanrep/
+**"Modelo cargado: 0 triángulos"**
+Verifica que `models/bunny.obj` existe. El modelo Stanford Bunny se puede descargar de http://www.graphics.stanford.edu/data/3Dscanrep/
 
-### Renderizado muy lento
-- Reduce `samples` y `depth` para pruebas
-- Activa `USE_PARALLEL = True`
-- Verifica que el BVH se está usando
+**Renderizado muy lento**
+Baja `samples` (50-100) y `max_depth` (4) para pruebas. Asegúrate de que `use_parallel=True`.
 
-### Imagen muy ruidosa
-- Aumenta `samples` (100 → 400 → 1000)
-- El ruido es normal con pocos samples (Monte Carlo)
+**Imagen muy ruidosa**
+Sube `samples`. El ruido es inherente al Monte Carlo — se reduce como `1/√samples`. Ver sección [Configuraciones de Rendering](#configuraciones-de-rendering).
+
+**Imagen oscura**
+Comprueba que `gamma=2.2` (sin corrección gamma la imagen aparece oscura). Si el problema persiste, sube `max_depth` — puede que los rebotes estén siendo cortados antes de alcanzar la luz.
+
+**Bokeh demasiado agresivo**
+Baja `aperture` o ponlo a `0` para deshabilitar el DOF completamente.
 
 ---
 
-## 📖 Referencias
+## Referencias
 
 ### Papers y Libros
-- **"Physically Based Rendering"** - Pharr, Jakob, Humphreys (PBR Bible)
-- **"Ray Tracing in One Weekend"** - Peter Shirley (tutorial base)
-- Cornell Box original (1984) - Program of Computer Graphics, Cornell University
+- **"Physically Based Rendering"** — Pharr, Jakob, Humphreys (PBR Bible)
+- **"Ray Tracing in One Weekend"** — Peter Shirley (tutorial base)
+- **"The Rendering Equation"** — James Kajiya (1986)
 
 ### Técnicas Implementadas
 - Path Tracing (Kajiya 1986)
-- Next Event Estimation (básico de MC rendering)
-- BVH (Bounding Volume Hierarchy) - aceleración espacial
-- Ley de Snell (Willebrord Snellius, 1621)
+- Next Event Estimation — muestreo directo de fuentes de luz
+- BVH con partición por eje aleatorio
+- Ley de Snell vectorial
 - Aproximación de Fresnel-Schlick (Christophe Schlick, 1994)
+- Möller-Trumbore (1997) — intersección rayo-triángulo
+- Cornell Box original (1984) — Program of Computer Graphics, Cornell University
 
 ---
 
-## 🤝 Contribuciones
+## Autor
 
-Las contribuciones son bienvenidas! Para cambios importantes:
-
-1. Fork el proyecto
-2. Crea una rama (`git checkout -b feature/amazing-feature`)
-3. Commit tus cambios (`git commit -m 'Add amazing feature'`)
-4. Push a la rama (`git push origin feature/amazing-feature`)
-5. Abre un Pull Request
-
----
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT - mira el archivo [LICENSE](LICENSE) para detalles.
-
----
-
-## 👨‍💻 Autor
-
-**Sandoval, Carlos David*
+**Sandoval, Carlos David**
 - GitHub: [@dotdeivid](https://github.com/dotdeivid)

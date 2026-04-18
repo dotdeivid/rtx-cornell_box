@@ -63,131 +63,7 @@ El costo es el tiempo de cómputo. Simular la física real de la luz es órdenes
 
 ## 3. La evolución: de los píxeles proyectados a la luz simulada
 
-Lo que hoy llamamos "ray tracing" no nació completo. Fue una cadena de avances donde cada generación resolvía los problemas que la anterior dejaba sin respuesta. Esta es esa cadena, en orden cronológico.
-
----
-
-### Paso 0 — Rasterización (sin ray tracing, años 70 en adelante)
-
-Antes de que existiera el ray tracing, los gráficos 3D funcionaban proyectando la geometría sobre la pantalla y coloreando cada píxel con un modelo de iluminación local: cuánta luz directa llega desde una fuente puntual, sin considerar rebotes ni sombras reales.
-
-Lo que tenía: velocidad, suficiente para renderizar en tiempo real.
-
-Lo que le faltaba: todo lo que depende de la relación entre objetos. Las sombras, las reflexiones, la iluminación indirecta, el color bleeding. Todo se hacía con trucos y aproximaciones.
-
----
-
-### Paso 1 — Ray Casting (1968, Arthur Appel)
-
-Arthur Appel propuso en 1968 la idea central: en lugar de trabajar objeto por objeto, invertir el proceso y lanzar rayos desde el ojo hacia la escena.
-
-La idea de invertir es práctica. En la realidad, la luz sale de las fuentes y viaja en todas las direcciones. La enorme mayoría de esos fotones nunca llegan al ojo. Es un desperdicio monumental simularlos. Appel observó que si invertimos el camino —lanzamos rayos desde el ojo hacia la escena— solo procesamos los rayos que efectivamente contribuyen a la imagen.
-
-Con el ray casting básico se podía determinar qué objeto era visible desde cada píxel (visibilidad primaria) y lanzar un rayo de sombra hacia las luces para saber si el punto estaba iluminado o en sombra.
-
-Lo que resolvió: visibilidad correcta, sombras duras sin trucos.
-
-Lo que le faltaba: no había reflexiones ni refracciones. Los objetos brillantes o de vidrio seguían sin poderse representar correctamente. Y la iluminación seguía siendo local: los rebotes entre superficies no existían.
-
----
-
-### Paso 2 — Ray Tracing de Whitted (1980, Turner Whitted)
-
-En 1980, Turner Whitted publicó el paper que puso el ray tracing en el mapa. Su aporte fue hacer el proceso recursivo: cuando un rayo golpea una superficie especular, en lugar de colorear el píxel con iluminación local, se lanza otro rayo en la dirección de reflexión y se ve qué hay en esa dirección. Si golpea vidrio, se lanza también un rayo refractado. Y así recursivamente, hasta una profundidad máxima.
-
-Whitted produjo una imagen famosa con una esfera metálica y una de vidrio encima de un tablero a cuadros. Reflexiones perfectas, refracción con Fresnel, sombras correctas. Para la época era magia.
-
-Lo que resolvió: reflexiones especulares recursivas, refracción con Snell, sombras más correctas.
-
-Lo que le faltaba: las superficies difusas (mate) seguían usando iluminación local. La iluminación indirecta entre superficies mate no existía. No había color bleeding, no había luz suave rebotando en las esquinas. La imagen de Whitted se veía física para los reflejos, pero artificial para las superficies mate.
-
----
-
-### Paso 3 — Distributed Ray Tracing (1984, Robert Cook, Thomas Porter, Loren Carpenter — Pixar)
-
-El paper "Distributed Ray Tracing" de Cook et al. introdujo una idea elegante: en lugar de lanzar un único rayo perfectamente especular, distribuir los rayos de forma aleatoria alrededor de la dirección ideal.
-
-Si distribuyes las muestras en el tiempo, obtienes motion blur sin costo adicional. Si las distribuyes sobre el disco de la apertura de la cámara, obtienes depth of field real (desenfoque de profundidad). Si las distribuyes sobre el área de la fuente de luz en lugar de un punto, obtienes sombras suaves. Si las distribuyes alrededor de la dirección de reflexión, obtienes reflexiones borrosas (glossy, como el metal cepillado).
-
-Todo esto surgió del mismo principio: muestrear aleatoriamente en lugar de usar un único rayo determinista.
-
-Lo que resolvió: sombras suaves, depth of field, motion blur, reflexiones glossy. Todo con el mismo framework.
-
-Lo que le faltaba: la iluminación indirecta entre superficies difusas seguía sin estar. Dos paredes mate no se iluminaban mutuamente. El color bleeding aún era imposible.
-
----
-
-### Paso 4 — Path Tracing (1986, James Kajiya)
-
-Kajiya formalizó en 1986 la **Rendering Equation**: la descripción matemática exacta y completa de cómo se distribuye la luz en una escena. Esta ecuación captura todo: emisión, reflexión difusa y especular, transmisión, iluminación directa e indirecta.
-
-El problema es que la ecuación es recursiva e imposible de resolver analíticamente. Kajiya propuso estimarla con Monte Carlo: lanzar muchos rayos desde el ojo, que cada rayo tome un camino aleatorio rebotando en las superficies hasta llegar a una fuente de luz, y promediar todos los resultados.
-
-Esto es el **path tracing**. Es el primer algoritmo que produce iluminación global correcta sin trucos: luz que rebota entre superficies difusas, color bleeding, iluminación suave en rincones, todo surge naturalmente de seguir los caminos de la luz.
-
-El costo: necesita muchas muestras por píxel para promediar el ruido estadístico. Con pocas muestras, la imagen tiene grano (el "noise" característico del path tracing). Con muchas, converge a la solución físicamente correcta.
-
-Lo que resolvió: iluminación global completa. Por primera vez, la luz se simulaba de verdad, no se aproximaba.
-
-Lo que le faltaba: convergencia lenta, especialmente con fuentes de luz pequeñas o caminos de luz difíciles (cáusticas bajo el vidrio, esquinas en penumbra). El path tracing puro es ineficiente cuando los caminos de luz útiles son raros.
-
----
-
-### Paso 5 — Bidirectional Path Tracing y Metropolis Light Transport (1993–1997)
-
-El path tracing lanza rayos desde la cámara. Pero ¿qué pasa si la fuente de luz está en una habitación conectada por una rendija estrecha? Los rayos desde la cámara tienen muy pocas probabilidades de atravesar esa rendija, y la imagen tarda mucho en converger.
-
-**Bidirectional Path Tracing** (Lafortune & Willems, 1993): se lanza rayos tanto desde la cámara como desde las luces, y se conectan los caminos que se "encuentran" en el medio. Los caminos de luz difíciles se vuelven mucho más eficientes de encontrar.
-
-**Metropolis Light Transport** (Veach & Guibas, 1997): va más lejos. Cuando encuentra un camino de luz que contribuye significativamente a la imagen, lo *muta* ligeramente para explorar rutas similares en lugar de seguir muestreando al azar. Es un algoritmo de cadena de Markov (MCMC) aplicado al transporte de luz. Especialmente efectivo en escenas con cáusticas complejas o iluminación extremadamente indirecta.
-
-Lo que resolvieron: escenas con iluminación difícil de encontrar. Imágenes que tardarían días con path tracing puro se podían renderizar en horas.
-
----
-
-### Paso 6 — Photon Mapping (1996–2001, Henrik Wann Jensen)
-
-Una aproximación diferente al problema. En lugar de un solo algoritmo de una pasada, Jensen propuso dos pasadas:
-
-**Pasada 1 (fotones):** Emitir fotones desde las fuentes de luz hacia la escena. Dejar que reboten. Almacenar dónde aterrizan en un mapa espacial (el "photon map").
-
-**Pasada 2 (render):** Renderizar con ray tracing convencional, pero cuando se necesita estimar la iluminación indirecta en un punto, consultar el mapa de fotones para ver cuánta energía aterrizó cerca.
-
-La ventaja principal: las cáusticas (el patrón de luz concentrada que proyecta una esfera de vidrio sobre la mesa) son naturales con photon mapping porque los fotones las forman físicamente en la primera pasada. Con path tracing puro, las cáusticas convergen extraordinariamente despacio.
-
-Lo que resolvió: cáusticas realistas, convergencia más rápida en ciertos escenarios.
-
-Lo que le faltaba: es un algoritmo con sesgo (bias) — introduce un error sistemático controlable pero no garantiza la convergencia exacta a la solución correcta de la misma forma que el path tracing.
-
----
-
-### Paso 7 — Ray Tracing en tiempo real en GPU (2018, NVIDIA RTX)
-
-Hasta 2018, todo el ray tracing de calidad era offline: horas o días de cómputo en CPU para producir una imagen. Los videojuegos y aplicaciones en tiempo real eran territorio exclusivo de la rasterización.
-
-NVIDIA introdujo en 2018 las GPUs RTX con unidades de hardware dedicadas a acelerar el BVH traversal y el test de intersección rayo-triángulo: las RT Cores. Al mismo tiempo, Microsoft estandarizó DirectX Raytracing (DXR) como API para acceder a estas capacidades desde cualquier aplicación.
-
-El resultado: ray tracing en tiempo real, a 60 fps o más. No path tracing completo (eso sigue siendo demasiado lento para tiempo real), sino una combinación híbrida: rasterización para la mayoría del frame, y ray tracing para los efectos que más lo benefician (reflexiones, sombras suaves, iluminación global aproximada).
-
-Lo que resolvió: la brecha entre calidad offline y tiempo real se redujo drásticamente. Los videojuegos pueden tener reflexiones de ray tracing, sombras correctas y algo de iluminación global, todo a 60 fps.
-
-Lo que le faltaba: sigue sin ser path tracing completo. Las muestras son limitadas, el ruido es agresivo. Aquí entra la IA.
-
----
-
-### Paso 8 — Denoising con IA y path tracing en tiempo real (2018–hoy)
-
-El ruido del path tracing a pocas muestras es el obstáculo principal para el tiempo real. La solución moderna: entrenar una red neuronal para que aprenda a limpiar ese ruido.
-
-**DLSS 3.5 Ray Reconstruction** de NVIDIA, **Intel Open Image Denoise**, y el denoiser de OptiX son ejemplos de redes neuronales que toman una imagen ruidosa con 1-4 samples por píxel y producen una imagen limpia que parece tener cientos. Se entrenan con millones de pares (imagen ruidosa, imagen limpia de referencia) y aprenden a reconocer los patrones del ruido de Monte Carlo.
-
-El resultado combinado hoy: hardware de ray tracing + denoising neural + técnicas de reconstrucción temporal (aprovechar frames anteriores para refinar el frame actual) permite tener algo muy cercano a path tracing completo en tiempo real.
-
-**Lumen** de Unreal Engine 5 es otro ejemplo: un sistema de iluminación global dinámica en tiempo real que combina ray tracing de distancia (signed distance fields) y ray tracing de hardware para aproximar la iluminación global de forma eficiente a 60 fps.
-
----
-
-### Resumen de la línea del tiempo
+Lo que hoy llamamos "ray tracing" no nació completo. Fue una cadena de avances donde cada generación resolvía los problemas que la anterior dejaba sin respuesta.
 
 | Año | Tecnología | Qué aportó | Qué le faltó |
 |-----|-----------|-----------|--------------|
@@ -201,7 +77,7 @@ El resultado combinado hoy: hardware de ray tracing + denoising neural + técnic
 | 2018 | RT Cores GPU / DXR | Ray tracing en tiempo real (híbrido) | No es path tracing completo, pocas muestras = ruido |
 | 2018–hoy | Denoising neural (DLSS, OIDN) | Imagen limpia de pocas muestras, GI en tiempo real | Sigue siendo una aproximación, no física exacta |
 
-El camino fue claro: cada generación resolvía el problema más urgente de la anterior y descubría el siguiente. Hoy, la línea entre "offline" y "tiempo real" se está borrando. Un videojuego moderno con RTX y DLSS produce imágenes que habrían requerido horas de render offline hace 10 años.
+La cadena es clara: cada paso resolvía el problema más urgente del anterior y descubría el siguiente. Los pasos 0 al 4 se explican en detalle en las secciones siguientes. Los pasos 5 al 8 pertenecen al mundo del rendering offline avanzado y al tiempo real moderno, que quedan fuera del alcance de este proyecto.
 
 ---
 

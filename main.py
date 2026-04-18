@@ -30,7 +30,7 @@ def main():
     render_config = RenderConfig(
         width=200,
         height=200,
-        samples=200,  # Aumentar para mejor calidad (más lento)
+        samples=400,  # Aumentar para mejor calidad (más lento)
         max_depth=8,  # Rebotes máximos de luz
         use_parallel=True,  # Multi-core rendering
         gamma=2.2,
@@ -40,7 +40,7 @@ def main():
     camera_config = CameraConfig(
         # origin y lookat ya tienen defaults para Cornell Box
         fov=40.0,
-        aperture=20.0,  # Depth of field (0 = todo enfocado)
+        aperture=0.0,  # Depth of field (0 = todo enfocado)
     )
 
     # ==== SETUP ====

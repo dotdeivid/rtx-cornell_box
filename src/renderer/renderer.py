@@ -93,9 +93,18 @@ class Renderer:
                 v = (y + random.random()) / self.config.height
 
                 ray = camera.get_ray(u, v)
-                pixel_color += color_ray(
+                sample = color_ray(
                     ray, world, lights, self.config.max_depth, self.config.max_depth
                 )
+                # Clamp por sample para eliminar fireflies (outliers estadísticos)
+                # Un solo rayo con valor extremo no contamina el promedio
+                MAX_SAMPLE = 3.0
+                sample = Vec3(
+                    min(sample.x, MAX_SAMPLE),
+                    min(sample.y, MAX_SAMPLE),
+                    min(sample.z, MAX_SAMPLE),
+                )
+                pixel_color += sample
 
             # Promedio y gamma correction
             pixel_color = pixel_color / self.config.samples

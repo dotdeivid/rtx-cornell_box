@@ -102,7 +102,5 @@ def color_ray(
             )
             return attenuation * indirect
 
-    # Fondo/cielo
-    if ray.direction.y > 0.8:
-        return Vec3(1.5, 1.5, 1.5)
-    return Vec3(0.05, 0.05, 0.05)
+    # Cornell Box cerrada - no hay cielo/fondo
+    return Vec3(0, 0, 0)

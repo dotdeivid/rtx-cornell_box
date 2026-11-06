@@ -183,6 +183,9 @@ class Quad:
         # 5. Ángulo sólido (Omega) para un parche plano:
         # Omega = (Area * cos_theta_luz) / distancia^2
         # Esto convierte la probabilidad de área en probabilidad de ángulo sólido
+        # Clampeamos distance_sq para evitar singularidades cuando el punto
+        # está muy cerca de la luz (previene fireflies)
+        distance_sq = max(distance_sq, 1.0)
         solid_angle = (area * cos_light) / distance_sq
 
         return direction, solid_angle

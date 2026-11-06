@@ -3,7 +3,7 @@
 Un **path tracer fotorrealista** implementado en Python que simula la física de la luz para renderizar la icónica Cornell Box con materiales avanzados (vidrio, metal, difuso) y modelos 3D complejos.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Active-success.svg)
 
 ---

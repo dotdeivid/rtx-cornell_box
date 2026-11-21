@@ -1,7 +1,7 @@
 """Material difuso (Lambertiano)."""
 
 from typing import Optional, Tuple
-from src.geometry import HitRecord
+from src.geometry.hit_record import HitRecord
 from src.materials.base import Material
 from src.vector import Vec3
 from src.ray import Ray
@@ -10,27 +10,21 @@ from src.utils import random_in_unit_sphere
 
 class DiffuseMaterial(Material):
     """
-    Material difuso simple.
-
-    Refleja la luz en todas las direcciones de manera uniforme.
+    Material difuso Lambertiano con muestreo coseno-ponderado en el hemisferio.
     """
 
-    def __init__(self, albedo: Vec3):
-        """
-        Args:
-            albedo: Color base del material (reflectancia)
-        """
+    uses_nee: bool = True
+
+    def __init__(self, albedo: Vec3) -> None:
         self.albedo = albedo
 
     def scatter(
         self, ray: Ray, hit_record: HitRecord
     ) -> Tuple[bool, Optional[Vec3], Optional[Ray]]:
-        """Dispersa el rayo de manera difusa."""
-        # Dirección aleatoria en hemisferio
+        """Dispersa el rayo de manera difusa alrededor de la normal orientada."""
         scatter_direction = hit_record.normal + random_in_unit_sphere().normalize()
 
-        # Prevenir dirección cero
-        if abs(scatter_direction.length()) < 1e-8:
+        if scatter_direction.length_squared() < 1e-16:
             scatter_direction = hit_record.normal
 
         scattered_ray = Ray(hit_record.point, scatter_direction)
@@ -38,4 +32,4 @@ class DiffuseMaterial(Material):
 
     def emitted(self) -> Vec3:
         """No emite luz."""
-        return Vec3(0, 0, 0)
+        return Vec3(0.0, 0.0, 0.0)

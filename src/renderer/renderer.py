@@ -1,41 +1,160 @@
-"""Renderer - orquestador de rendering multi-core."""
+"""Renderer - orquestador de rendering multi-core con stratified sampling."""
+
+import math
+import multiprocessing
+import random
+from typing import Optional, Sequence
 
 import numpy as np
 from PIL import Image
-from typing import List
-import multiprocessing
-from functools import partial
-import random
 
 from src.vector import Vec3
 from src.camera.camera import Camera
-from src.geometry import BVHNode
+from src.geometry.base import Geometry
 from src.config.render_config import RenderConfig
-from src.renderer.path_tracer import color_ray
+from src.renderer.path_tracer import AreaLight, color_ray
+
+
+# Estado global por proceso worker (inicializado una única vez por proceso en Pool)
+_WORKER_WORLD: Optional[Geometry] = None
+_WORKER_LIGHTS: Sequence[AreaLight] = ()
+_WORKER_CAMERA: Optional[Camera] = None
+_WORKER_CONFIG: Optional[RenderConfig] = None
+
+
+def _init_worker(
+    world: Geometry,
+    lights: Sequence[AreaLight],
+    camera: Camera,
+    config: RenderConfig,
+) -> None:
+    """Inicializa el estado inmutable de la escena una sola vez por proceso worker."""
+    global _WORKER_WORLD, _WORKER_LIGHTS, _WORKER_CAMERA, _WORKER_CONFIG
+    _WORKER_WORLD = world
+    _WORKER_LIGHTS = lights
+    _WORKER_CAMERA = camera
+    _WORKER_CONFIG = config
+    if config.seed is None:
+        random.seed()
+
+
+def _render_row_worker(y: int) -> np.ndarray:
+    """Punto de entrada picklable para cada tarea de fila en ``multiprocessing.Pool``."""
+    assert _WORKER_WORLD is not None
+    assert _WORKER_CAMERA is not None
+    assert _WORKER_CONFIG is not None
+    return _render_row_impl(
+        y, _WORKER_WORLD, _WORKER_LIGHTS, _WORKER_CAMERA, _WORKER_CONFIG
+    )
+
+
+def _render_row_impl(
+    y: int,
+    world: Geometry,
+    lights: Sequence[AreaLight],
+    camera: Camera,
+    config: RenderConfig,
+) -> np.ndarray:
+    """
+    Renderiza una fila completa de píxeles con verdadero stratified sampling.
+
+    Si ``config.seed`` está definida, fija la semilla determinista por fila para
+    que los modos secuencial y paralelo produzcan exactamente la misma imagen.
+    """
+    if config.seed is not None:
+        random.seed(f"{config.seed}:{y}")
+
+    width = config.width
+    height = config.height
+    samples = config.samples
+    max_depth = config.max_depth
+    max_sample = config.max_sample
+    inv_gamma = 1.0 / config.gamma
+    inv_samples = 1.0 / samples
+
+    # Cuadrícula estratificada √samples × √samples + resto uniforme si no es cuadrado perfecto
+    grid_n = math.isqrt(samples)
+    stratified_count = grid_n * grid_n
+    remainder = samples - stratified_count
+    inv_grid = 1.0 / grid_n
+
+    row = np.empty((width, 3), dtype=np.uint8)
+
+    for x in range(width):
+        r_acc = 0.0
+        g_acc = 0.0
+        b_acc = 0.0
+
+        # Muestras estratificadas en sub-celdas (sx, sy)
+        for sy in range(grid_n):
+            for sx in range(grid_n):
+                u = (x + (sx + random.random()) * inv_grid) / width
+                v = (y + (sy + random.random()) * inv_grid) / height
+                ray = camera.get_ray(u, v)
+                sample = color_ray(ray, world, lights, max_depth, max_depth)
+
+                if max_sample is not None:
+                    r_acc += min(sample.x, max_sample)
+                    g_acc += min(sample.y, max_sample)
+                    b_acc += min(sample.z, max_sample)
+                else:
+                    r_acc += sample.x
+                    g_acc += sample.y
+                    b_acc += sample.z
+
+        # Muestras sobrantes si samples no es un cuadrado perfecto
+        for _ in range(remainder):
+            u = (x + random.random()) / width
+            v = (y + random.random()) / height
+            ray = camera.get_ray(u, v)
+            sample = color_ray(ray, world, lights, max_depth, max_depth)
+
+            if max_sample is not None:
+                r_acc += min(sample.x, max_sample)
+                g_acc += min(sample.y, max_sample)
+                b_acc += min(sample.z, max_sample)
+            else:
+                r_acc += sample.x
+                g_acc += sample.y
+                b_acc += sample.z
+
+        # Promedio + corrección gamma segura (clamp >= 0)
+        r_lin = max(0.0, r_acc * inv_samples)
+        g_lin = max(0.0, g_acc * inv_samples)
+        b_lin = max(0.0, b_acc * inv_samples)
+
+        r_val = min(1.0, r_lin**inv_gamma)
+        g_val = min(1.0, g_lin**inv_gamma)
+        b_val = min(1.0, b_lin**inv_gamma)
+
+        row[x, 0] = int(r_val * 255.99)
+        row[x, 1] = int(g_val * 255.99)
+        row[x, 2] = int(b_val * 255.99)
+
+    return row
 
 
 class Renderer:
     """
     Orquestador principal del proceso de rendering.
 
-    Coordinates multi-core rendering y guarda resultados.
+    Coordina rendering multi-core/secuencial y guarda la imagen resultante.
     """
 
-    def __init__(self, config: RenderConfig):
-        """
-        Args:
-            config: Configuración de rendering
-        """
+    def __init__(self, config: RenderConfig) -> None:
         self.config = config
 
-    def render(self, world: BVHNode, lights: List, camera: Camera):
+    def render(
+        self,
+        world: Geometry,
+        lights: Sequence[AreaLight],
+        camera: Camera,
+    ) -> np.ndarray:
         """
-        Renderiza la escena completa.
+        Renderiza la escena completa y guarda la imagen PNG en disco.
 
-        Args:
-            world: Geometría de la escena (BVH)
-            lights: Lista de fuentes de luz
-            camera: Cámara virtual
+        Returns:
+            Array RGB uint8 de forma ``(height, width, 3)`` (orientación final guardada).
         """
         print(f"Iniciando rendering {self.config.width}×{self.config.height}...")
         print(f"Samples: {self.config.samples}, Max depth: {self.config.max_depth}")
@@ -46,21 +165,31 @@ class Renderer:
         else:
             image_data = self._render_sequential(world, lights, camera)
 
-        # Guardar imagen
-        self._save_image(image_data)
+        flipped = self._save_image(image_data)
         print(f"✓ Imagen guardada en: {self.config.output_path}")
+        return flipped
 
-    def _render_parallel(self, world, lights, camera):
-        """Rendering multi-core."""
-        with multiprocessing.Pool() as pool:
-            render_func = partial(
-                self._render_row, world=world, lights=lights, camera=camera
-            )
-            rows = pool.map(render_func, range(self.config.height))
+    def _render_parallel(
+        self,
+        world: Geometry,
+        lights: Sequence[AreaLight],
+        camera: Camera,
+    ) -> np.ndarray:
+        """Rendering multi-core pasando el BVH una sola vez por proceso worker."""
+        with multiprocessing.Pool(
+            initializer=_init_worker,
+            initargs=(world, lights, camera, self.config),
+        ) as pool:
+            rows = pool.map(_render_row_worker, range(self.config.height))
 
         return np.array(rows, dtype=np.uint8)
 
-    def _render_sequential(self, world, lights, camera):
+    def _render_sequential(
+        self,
+        world: Geometry,
+        lights: Sequence[AreaLight],
+        camera: Camera,
+    ) -> np.ndarray:
         """Rendering single-core."""
         rows = []
         for y in range(self.config.height):
@@ -71,63 +200,20 @@ class Renderer:
 
         return np.array(rows, dtype=np.uint8)
 
-    def _render_row(self, y: int, world, lights, camera) -> np.ndarray:
-        """
-        Renderiza una fila de píxeles.
+    def _render_row(
+        self,
+        y: int,
+        world: Geometry,
+        lights: Sequence[AreaLight],
+        camera: Camera,
+    ) -> np.ndarray:
+        """Renderiza una fila de píxeles."""
+        return _render_row_impl(y, world, lights, camera, self.config)
 
-        Args:
-            y: Índice de fila
-            world, lights, camera: Parámetros de escena
-
-        Returns:
-            Array de píxeles RGB
-        """
-        row = []
-
-        for x in range(self.config.width):
-            pixel_color = Vec3(0, 0, 0)
-
-            # Stratified sampling
-            for _ in range(self.config.samples):
-                u = (x + random.random()) / self.config.width
-                v = (y + random.random()) / self.config.height
-
-                ray = camera.get_ray(u, v)
-                sample = color_ray(
-                    ray, world, lights, self.config.max_depth, self.config.max_depth
-                )
-                # Clamp por sample para eliminar fireflies (outliers estadísticos)
-                # Un solo rayo con valor extremo no contamina el promedio
-                MAX_SAMPLE = 3.0
-                sample = Vec3(
-                    min(sample.x, MAX_SAMPLE),
-                    min(sample.y, MAX_SAMPLE),
-                    min(sample.z, MAX_SAMPLE),
-                )
-                pixel_color += sample
-
-            # Promedio y gamma correction
-            pixel_color = pixel_color / self.config.samples
-            pixel_color = Vec3(
-                pixel_color.x ** (1.0 / self.config.gamma),
-                pixel_color.y ** (1.0 / self.config.gamma),
-                pixel_color.z ** (1.0 / self.config.gamma),
-            )
-
-            # Clamp y convertir a [0, 255]
-            r = int(max(0, min(1, pixel_color.x)) * 255.99)
-            g = int(max(0, min(1, pixel_color.y)) * 255.99)
-            b = int(max(0, min(1, pixel_color.z)) * 255.99)
-
-            row.append([r, g, b])
-
-        return np.array(row, dtype=np.uint8)
-
-    def _save_image(self, image_data: np.ndarray):
-        """Guarda imagen a archivo."""
-        # Flip vertical (OpenGL convention)
-        image_data = np.flipud(image_data)
-
-        img = Image.fromarray(image_data, "RGB")
+    def _save_image(self, image_data: np.ndarray) -> np.ndarray:
+        """Voltea verticalmente (convención OpenGL -> imagen) y guarda a disco."""
+        flipped = np.flipud(image_data)
+        img = Image.fromarray(flipped, "RGB")
         self.config.output_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(self.config.output_path)
+        return flipped

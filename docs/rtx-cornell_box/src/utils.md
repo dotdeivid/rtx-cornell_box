@@ -70,7 +70,7 @@ Exclusivamente en `Camera.get_ray()` para simular profundidad de campo (DOF). El
 
 ---
 
-## `load_obj(filename, scale, offset, material) → list[Triangle]`
+## `load_obj(filename, scale, offset, material, ground_y) → list[Triangle]`
 
 Carga un archivo Wavefront OBJ y retorna una lista de `Triangle` listos para ser añadidos a la escena.
 
@@ -82,6 +82,7 @@ Carga un archivo Wavefront OBJ y retorna una lista de `Triangle` listos para ser
 | `scale` | `float` | `1.0` | Factor de escala uniforme |
 | `offset` | `Vec3` | `Vec3(0,0,0)` | Traslación aplicada a todos los vértices |
 | `material` | `Material` | `DiffuseMaterial(gris)` | Material compartido por todos los triángulos |
+| `ground_y` | `float \| None` | `None` | Si se indica, apoya el vértice más bajo del modelo en esa coordenada Y |
 
 ### Procesamiento línea a línea
 
@@ -115,12 +116,12 @@ Cara con vértices [v0, v1, v2, v3, v4]:
 
 ### Retorno
 
-Lista de `Triangle`. Si hay error (archivo no encontrado, formato inválido), imprime el error y retorna lista vacía. No lanza excepciones.
+Lista de `Triangle`. Lanza `OSError` si el archivo no existe o no se puede leer, y `ValueError` si el formato es inválido (números mal formados, índices fuera de rango o archivo sin caras). Si se pasa `ground_y`, el modelo se traslada en Y para que su vértice más bajo quede en ese valor.
 
 ### Uso típico
 
 ```python
-triangles = load_obj("models/bunny.obj", scale=1400.0, offset=Vec3(278, 0, 278), material=glass)
+triangles = load_obj(MODELS_DIR / "bunny.obj", scale=1400.0, offset=Vec3(278, 0, 278), material=glass, ground_y=0.0)
 objects.extend(triangles)
 world = BVHNode.create(objects)   # Siempre envolver en BVH para modelos grandes
 ```

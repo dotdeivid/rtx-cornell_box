@@ -1,7 +1,7 @@
 """Material emisivo para luces de área."""
 
 from typing import Optional, Tuple
-from src.geometry import HitRecord
+from src.geometry.hit_record import HitRecord
 from src.materials.base import Material
 from src.vector import Vec3
 from src.ray import Ray
@@ -11,15 +11,10 @@ class EmissiveMaterial(Material):
     """
     Material que emite luz (para luces de área).
 
-    No dispersa rayos, solo emite luz. Usado para modelar
-    fuentes de luz como paneles luminosos, el sol, etc.
+    No dispersa rayos, solo emite radiancia.
     """
 
-    def __init__(self, emission: Vec3):
-        """
-        Args:
-            emission: Color e intensidad de la luz emitida
-        """
+    def __init__(self, emission: Vec3) -> None:
         self.emission_color = emission
 
     def scatter(

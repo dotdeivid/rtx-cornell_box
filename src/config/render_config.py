@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass
@@ -20,11 +21,8 @@ class RenderConfig:
         use_parallel: Si True, usa rendering multi-core
         output_path: Ruta donde guardar la imagen renderizada
         gamma: Factor de corrección gamma para displays sRGB (típicamente 2.2)
-
-    Ejemplo:
-        >>> config = RenderConfig(width=800, height=600, samples=1000)
-        >>> print(f"Resolución: {config.width}×{config.height}")
-        Resolución: 800×600
+        max_sample: Tope por componente por muestra para mitigar fireflies (None = sin clamp)
+        seed: Semilla opcional para renders reproducibles
     """
 
     width: int = 400
@@ -34,13 +32,15 @@ class RenderConfig:
     use_parallel: bool = True
     output_path: Path = Path("output/result_render.png")
     gamma: float = 2.2
+    max_sample: Optional[float] = 10.0
+    seed: Optional[int] = None
 
     @property
     def aspect_ratio(self) -> float:
         """Calcula aspect ratio de la imagen."""
         return self.width / self.height
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Valida parámetros después de inicialización."""
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Width y height deben ser positivos")
@@ -50,7 +50,8 @@ class RenderConfig:
             raise ValueError("Max depth no puede ser negativo")
         if self.gamma <= 0:
             raise ValueError("Gamma debe ser positivo")
+        if self.max_sample is not None and self.max_sample <= 0:
+            raise ValueError("max_sample debe ser positivo o None")
 
-        # Convertir string a Path si es necesario
         if isinstance(self.output_path, str):
             self.output_path = Path(self.output_path)

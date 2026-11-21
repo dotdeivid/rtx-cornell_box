@@ -1,136 +1,112 @@
 """BVH (Bounding Volume Hierarchy) para aceleración espacial."""
 
-import random
+from __future__ import annotations
+
+from typing import List, Optional, Sequence, Tuple
+
 from src.ray import Ray
+from src.geometry.base import Geometry
 from src.geometry.aabb import AABB
 from src.geometry.hit_record import HitRecord
 
-class BVHNode:
+
+class BVHNode(Geometry):
     """
     Árbol binario de jerarquía de volúmenes envolventes (BVH).
 
     Reduce la complejidad de intersección de O(n) a O(log n) mediante poda espacial.
-    Cada nodo almacena una AABB que contiene todos sus descendientes.
-
-    Atributos:
-        left: Hijo izquierdo (BVHNode u objeto geométrico)
-        right: Hijo derecho (BVHNode u objeto geométrico)
-        box (AABB): Caja envolvente que contiene ambos hijos
+    Divide cada nodo por el eje de mayor extensión ordenando por centroide de AABB.
     """
 
-    def __init__(self, left, right, box):
-        """
-        Constructor privado del nodo BVH.
+    __slots__ = ("left", "right", "box")
 
-        No se recomienda usar este constructor directamente. En su lugar,
-        utiliza el método de fábrica BVHNode.create() que construye el árbol
-        completo automáticamente de forma óptima.
-
-        Args:
-            left: Hijo izquierdo (BVHNode u objeto geométrico)
-            right: Hijo derecho (BVHNode u objeto geométrico)
-            box (AABB): Caja envolvente que contiene a ambos hijos
-        """
+    def __init__(self, left: Geometry, right: Geometry, box: AABB) -> None:
         self.left = left
         self.right = right
         self.box = box
 
     @classmethod
-    def create(cls, objects, start=0, end=None):
+    def create(
+        cls,
+        objects: Sequence[Geometry],
+        start: int = 0,
+        end: Optional[int] = None,
+    ) -> Geometry:
         """
-        Construye el árbol BVH recursivamente dividiendo por eje aleatorio.
-
-        Ordena objetos por su AABB en un eje aleatorio y divide a la mitad.
-        Con 1 objeto retorna el objeto directamente; con 2, crea un nodo hoja.
+        Construye el árbol BVH recursivamente sin mutar la colección original.
 
         Args:
-            objects (list): Lista de objetos geométricos (deben implementar hit() y bounding_box())
-            start (int): Índice inicial del segmento
-            end (int): Índice final (exclusivo). Por defecto len(objects)
+            objects: Secuencia no vacía de objetos geométricos.
+            start: Índice inicial del segmento.
+            end: Índice final (exclusivo). Por defecto ``len(objects)``.
 
         Returns:
-            BVHNode o objeto geométrico: Raíz del subárbol construido
+            Raíz del subárbol construido (``BVHNode`` o primitiva única).
+
+        Raises:
+            ValueError: Si el segmento de objetos está vacío.
         """
         if end is None:
             end = len(objects)
+        if end - start <= 0:
+            raise ValueError("No se puede construir un BVH con una lista vacía de objetos")
 
-        # 1. Elegir un eje aleatorio para dividir el espacio (X=0, Y=1, Z=2)
-        axis = random.randint(0, 2)
+        # Copiamos el segmento y precalculamos (obj, bbox, centroid) para no mutar la entrada
+        items: List[Tuple[Geometry, AABB, Tuple[float, float, float]]] = []
+        for obj in objects[start:end]:
+            bbox = obj.bounding_box()
+            c = bbox.centroid()
+            items.append((obj, bbox, (c.x, c.y, c.z)))
 
-        # Función auxiliar para comparar las cajas envolventes en el eje elegido
-        def box_compare(obj):
-            box = obj.bounding_box()
-            # Retorna el punto mínimo en el eje seleccionado
-            return [box.min.x, box.min.y, box.min.z][axis]
+        return cls._build(items, 0, len(items))
 
+    @classmethod
+    def _build(
+        cls,
+        items: List[Tuple[Geometry, AABB, Tuple[float, float, float]]],
+        start: int,
+        end: int,
+    ) -> Geometry:
         span = end - start
 
-        # CASO BASE: Solo un objeto
         if span == 1:
-            # OPTIMIZACIÓN: Retornamos el objeto directamente (ej. Sphere)
-            # Esto evita crear un nodo innecesario que apunte a sí mismo.
-            return objects[start]
+            return items[start][0]
 
-        # CASO BASE: Dos objetos
-        elif span == 2:
-            # Ordenamos los dos objetos para que el árbol sea predecible
-            if box_compare(objects[start]) < box_compare(objects[start + 1]):
-                left, right = objects[start], objects[start + 1]
-            else:
-                left, right = objects[start + 1], objects[start]
+        if span == 2:
+            left_obj, left_box, _ = items[start]
+            right_obj, right_box, _ = items[start + 1]
+            return cls(left_obj, right_obj, left_box.union(right_box))
 
-        # CASO RECURSIVO: Más de dos objetos
-        else:
-            # Ordenamos el segmento actual de la lista basado en el eje
-            segment = objects[start:end]
-            segment.sort(key=box_compare)
-            objects[start:end] = segment
+        # Calcular bounding box total del segmento para elegir el eje más largo
+        full_box = items[start][1]
+        for i in range(start + 1, end):
+            full_box = full_box.union(items[i][1])
 
-            # Punto de división media
-            mid = start + span // 2
+        axis = full_box.longest_axis()
 
-            # Construcción recursiva de las ramas
-            left = cls.create(objects, start, mid)
-            right = cls.create(objects, mid, end)
+        segment = items[start:end]
+        segment.sort(key=lambda item: item[2][axis])
+        items[start:end] = segment
 
-        # Creamos la caja envolvente (AABB) total que cubre a ambos hijos
-        # Tanto 'left' como 'right' pueden ser un BVHNode o una Sphere
-        full_box = left.bounding_box().union(right.bounding_box())
+        mid = start + span // 2
+        left = cls._build(items, start, mid)
+        right = cls._build(items, mid, end)
 
-        return cls(left, right, full_box)
+        return cls(left, right, left.bounding_box().union(right.bounding_box()))
 
-    def hit(self, ray, t_min, t_max):
-        """
-        Intersección jerárquica: poda el subárbol si el rayo no toca la AABB del nodo.
-
-        Args:
-            ray (Ray): El rayo a probar
-            t_min (float): Distancia mínima válida (normalmente 0.001)
-            t_max (float): Distancia máxima válida
-
-        Returns:
-            HitRecord o None: La intersección más cercana en [t_min, t_max], o None
-        """
-        # PODA (Pruning): Si el rayo no toca la caja contenedora,
-        # ignoramos todo lo que hay dentro. Ahorro masivo de CPU.
+    def hit(
+        self, ray: Ray, t_min: float = 0.001, t_max: float = float("inf")
+    ) -> Optional[HitRecord]:
+        """Intersección jerárquica con poda por AABB y reducción de ``t_max``."""
         if not self.box.hit(ray, t_min, t_max):
             return None
 
-        # Buscamos en el hijo izquierdo primero
         hit_left = self.left.hit(ray, t_min, t_max)
-
-        # OPTIMIZACIÓN: Si golpeamos algo a la izquierda,
-        # actualizamos el límite de búsqueda para el hijo derecho.
-        # No nos interesa nada que esté más lejos que hit_left.t
-        limit = hit_left.t if hit_left else t_max
+        limit = hit_left.t if hit_left is not None else t_max
         hit_right = self.right.hit(ray, t_min, limit)
 
-        # Retornamos el impacto que haya ocurrido más cerca de la cámara
-        return hit_right if hit_right else hit_left
+        return hit_right if hit_right is not None else hit_left
 
-    def bounding_box(self):
-        """
-        Returns:
-            AABB: Caja envolvente precalculada que contiene todos los descendientes
-        """
+    def bounding_box(self) -> AABB:
+        """Retorna la AABB precalculada que envuelve ambos hijos."""
         return self.box

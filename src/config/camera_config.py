@@ -1,6 +1,6 @@
 """Configuración de parámetros de cámara."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from src.vector import Vec3
 
@@ -16,28 +16,20 @@ class CameraConfig:
     Attributes:
         origin: Posición 3D de la cámara
         lookat: Punto 3D hacia donde mira la cámara
-        vup: Vector "up" para orientación (típicamente (0,1,0))
+        vup: Vector "up" para orientación (típicamente (0, 1, 0))
         fov: Field of view vertical en grados
         aperture: Tamaño de apertura para depth of field (0 = todo enfocado)
         focus_distance: Distancia al plano focal (None = auto-calcular)
-
-    Ejemplo:
-        >>> # Cámara mirando hacia el centro de Cornell Box
-        >>> config = CameraConfig(
-        ...     origin=Vec3(278, 278, -800),
-        ...     lookat=Vec3(278, 278, 0),
-        ...     fov=40.0
-        ... )
     """
 
-    origin: Vec3 = Vec3(278, 278, -800)
-    lookat: Vec3 = Vec3(278, 278, 278)
-    vup: Vec3 = Vec3(0, 1, 0)
+    origin: Vec3 = field(default_factory=lambda: Vec3(278, 278, -800))
+    lookat: Vec3 = field(default_factory=lambda: Vec3(278, 278, 278))
+    vup: Vec3 = field(default_factory=lambda: Vec3(0, 1, 0))
     fov: float = 40.0
-    aperture: float = 20.0
+    aperture: float = 0.0
     focus_distance: Optional[float] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Valida parámetros después de inicialización."""
         if self.fov <= 0 or self.fov >= 180:
             raise ValueError("FOV debe estar entre 0 y 180 grados")
@@ -45,3 +37,7 @@ class CameraConfig:
             raise ValueError("Aperture no puede ser negativo")
         if self.focus_distance is not None and self.focus_distance <= 0:
             raise ValueError("Focus distance debe ser positivo")
+        if self.origin == self.lookat:
+            raise ValueError("origin y lookat no pueden ser el mismo punto")
+        if self.vup.length_squared() == 0.0:
+            raise ValueError("vup no puede ser el vector cero")

@@ -1,64 +1,50 @@
 """Tests para scene builder."""
 
+import os
+
 import pytest
-from src.vector import Vec3
-from src.scene import create_cornell_box_scene, SceneMode
 from src.geometry import BVHNode
+from src.scene.cornell_box import _get_bunny_objects
+from src.materials import EmissiveMaterial
+from src.scene import create_cornell_box_scene, SceneMode
 
 
 class TestSceneBuilder:
     """Tests para scene builder."""
 
     def test_create_spheres_scene(self):
-        """Test crear escena con esferas."""
         world, lights = create_cornell_box_scene(SceneMode.SPHERES)
+        assert isinstance(world, BVHNode)
+        assert len(lights) == 1
+        assert isinstance(lights[0].material, EmissiveMaterial)
 
-        assert world is not None
-        assert isinstance(world, (BVHNode, object))
-        assert lights is not None
-        assert len(lights) > 0
+    def test_create_boxes_scene(self):
+        world, lights = create_cornell_box_scene(SceneMode.BOXES)
+        assert isinstance(world, BVHNode)
+        assert len(lights) == 1
+        assert isinstance(lights[0].material, EmissiveMaterial)
 
-    @pytest.mark.skip(reason="Requiere bunny.obj - test opcional")
     def test_create_bunny_scene(self):
-        """Test crear escena con bunny."""
         world, lights = create_cornell_box_scene(SceneMode.BUNNY)
+        assert isinstance(world, BVHNode)
+        assert len(lights) == 1
+        assert isinstance(lights[0].material, EmissiveMaterial)
 
-        assert world is not None
-        assert lights is not None
+    def test_bunny_rests_on_floor_from_any_cwd(self, tmp_path):
+        cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            tris = _get_bunny_objects()
+        finally:
+            os.chdir(cwd)
+        min_y = min(min(t.v0.y, t.v1.y, t.v2.y) for t in tris)
+        assert len(tris) == 4968
+        assert min_y == pytest.approx(0.0)
 
-    def test_lights_are_emissive(self):
-        """Test que luces tienen EmissiveMaterial."""
-        world, lights = create_cornell_box_scene(SceneMode.SPHERES)
-
-        assert len(lights) > 0
+    def test_lights_emit_positive_radiance(self):
+        _, lights = create_cornell_box_scene(SceneMode.SPHERES)
         for light in lights:
-            # Las luces deben tener material con emission_color
-            assert hasattr(light.material, "emission_color")
-
-    def test_spheres_scene_has_objects(self):
-        """Test que escena de esferas tiene objetos."""
-        world, lights = create_cornell_box_scene(SceneMode.SPHERES)
-
-        # Debe tener al menos paredes + luz + esferas
-        assert world is not None
-
-    def test_different_modes_different_results(self):
-        """Test que diferentes modos producen diferentes escenas."""
-        spheres_world, spheres_lights = create_cornell_box_scene(SceneMode.SPHERES)
-
-        # Modo SPHERES debe tener luces
-        assert len(spheres_lights) > 0
-
-        # Escenas deben tener mundo
-        assert spheres_world is not None
-
-    def test_materials_are_used(self):
-        """Test que materiales están siendo usados."""
-        world, lights = create_cornell_box_scene(SceneMode.SPHERES)
-
-        # Las luces usan materiales
-        for light in lights:
-            assert light.material is not None
+            assert light.material.emitted().length() > 0.0
 
 
 if __name__ == "__main__":

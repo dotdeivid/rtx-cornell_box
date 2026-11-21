@@ -16,6 +16,8 @@ class Material(ABC):
     Define la interfaz que todos los materiales deben implementar.
     """
 
+    uses_nee: bool = False
+
     @abstractmethod
     def scatter(
         self, ray: Ray, hit_record: "HitRecord"

@@ -1,5 +1,7 @@
 """Axis-Aligned Bounding Box (AABB) para aceleración de ray tracing."""
 
+from __future__ import annotations
+
 from src.vector import Vec3
 from src.ray import Ray
 
@@ -10,39 +12,20 @@ class AABB:
 
     Usada para acelerar ray tracing y construir el BVH. Los tests de intersección
     son O(1) con el algoritmo de slabs (Kay-Kajiya 1986).
-
-    Atributos:
-        min (Vec3): Esquina con las coordenadas mínimas en cada eje
-        max (Vec3): Esquina con las coordenadas máximas en cada eje
     """
 
-    def __init__(self, min_pt: Vec3, max_pt: Vec3):
-        """
-        Inicializa una caja envolvente alineada con los ejes.
+    __slots__ = ("min", "max")
 
-        Args:
-            min_pt (Vec3): Esquina con las coordenadas mínimas en cada eje
-            max_pt (Vec3): Esquina con las coordenadas máximas en cada eje
-
-        Nota:
-            Se asume que min_pt.x <= max_pt.x, min_pt.y <= max_pt.y, min_pt.z <= max_pt.z
-        """
+    def __init__(self, min_pt: Vec3, max_pt: Vec3) -> None:
         self.min = min_pt
         self.max = max_pt
 
-    def hit(self, ray: Ray, t_min, t_max):
+    def hit(self, ray: Ray, t_min: float, t_max: float) -> bool:
         """
         Prueba si un rayo intersecta la caja usando el algoritmo de slabs (Kay-Kajiya 1986).
 
-        Calcula los intervalos de intersección en cada eje y verifica que se solapan.
-
-        Args:
-            ray (Ray): El rayo a probar
-            t_min (float): Distancia mínima válida
-            t_max (float): Distancia máxima válida
-
-        Returns:
-            bool: True si hay intersección en [t_min, t_max]
+        Maneja de forma segura direcciones paralelas a los ejes (``direction_i == 0``)
+        sin producir ``ZeroDivisionError``, ``RuntimeWarning`` ni ``NaN``.
         """
         origin_vals = (ray.origin.x, ray.origin.y, ray.origin.z)
         direction_vals = (ray.direction.x, ray.direction.y, ray.direction.z)
@@ -55,30 +38,30 @@ class AABB:
             min_i = min_vals[i]
             max_i = max_vals[i]
 
-            invD = 1.0 / direction_i
-            t0 = (min_i - origin_i) * invD
-            t1 = (max_i - origin_i) * invD
+            if abs(direction_i) < 1e-12:
+                # Rayo paralelo a este eje: solo hay intersección si el origen está dentro del slab
+                if origin_i < min_i or origin_i > max_i:
+                    return False
+                continue
 
-            if invD < 0:
+            inv_d = 1.0 / direction_i
+            t0 = (min_i - origin_i) * inv_d
+            t1 = (max_i - origin_i) * inv_d
+
+            if inv_d < 0.0:
                 t0, t1 = t1, t0
 
-            t_min = max(t0, t_min)
-            t_max = min(t1, t_max)
+            if t0 > t_min:
+                t_min = t0
+            if t1 < t_max:
+                t_max = t1
 
             if t_max <= t_min:
                 return False
         return True
 
-    def union(self, other):
-        """
-        Retorna una nueva AABB que envuelve completamente esta caja y otra.
-
-        Args:
-            other (AABB): La otra caja envolvente
-
-        Returns:
-            AABB: Caja mínima que contiene ambas cajas
-        """
+    def union(self, other: AABB) -> AABB:
+        """Retorna una nueva AABB que envuelve completamente esta caja y ``other``."""
         new_min = Vec3(
             min(self.min.x, other.min.x),
             min(self.min.y, other.min.y),
@@ -90,3 +73,22 @@ class AABB:
             max(self.max.z, other.max.z),
         )
         return AABB(new_min, new_max)
+
+    def centroid(self) -> Vec3:
+        """Retorna el centroide geométrico de la caja."""
+        return Vec3(
+            0.5 * (self.min.x + self.max.x),
+            0.5 * (self.min.y + self.max.y),
+            0.5 * (self.min.z + self.max.z),
+        )
+
+    def longest_axis(self) -> int:
+        """Retorna el índice del eje de mayor extensión (0=X, 1=Y, 2=Z)."""
+        dx = self.max.x - self.min.x
+        dy = self.max.y - self.min.y
+        dz = self.max.z - self.min.z
+        if dx >= dy and dx >= dz:
+            return 0
+        if dy >= dz:
+            return 1
+        return 2

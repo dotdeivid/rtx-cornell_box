@@ -1,109 +1,97 @@
-import numpy as np
+"""Álgebra vectorial 3D para posiciones, direcciones y colores."""
+
+from __future__ import annotations
+
+import math
+from typing import Union
 
 
 class Vec3:
     """
-    Vector tridimensional. Se usa para posiciones, direcciones y colores en la escena.
-
-    Internamente usa numpy float64 para precisión numérica.
+    Vector tridimensional inmutable en la práctica, implementado con floats nativos
+    y ``__slots__`` para mínimo overhead en el hot path del path tracer.
     """
 
-    def __init__(self, x, y, z):
-        """
-        Args:
-            x, y, z (float): Componentes del vector
-        """
-        # Usamos float64 para mayor precisión numérica
-        self.components = np.array([x, y, z], dtype=np.float64)
+    __slots__ = ("x", "y", "z")
 
-    @property
-    def x(self):
-        """float: Componente X."""
-        return self.components[0]
-
-    @property
-    def y(self):
-        """float: Componente Y."""
-        return self.components[1]
-
-    @property
-    def z(self):
-        """float: Componente Z."""
-        return self.components[2]
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self.x: float = float(x)
+        self.y: float = float(y)
+        self.z: float = float(z)
 
     # --- Operaciones Aritméticas Básicas ---
 
-    def __add__(self, other):
-        """Suma componente a componente. Retorna Vec3."""
-        return Vec3(*(self.components + other.components))
+    def __add__(self, other: Vec3) -> Vec3:
+        """Suma componente a componente."""
+        return Vec3(self.x + other.x, self.y + other.y, self.z + other.z)
 
-    def __sub__(self, other):
-        """Resta componente a componente. Retorna Vec3."""
-        return Vec3(*(self.components - other.components))
+    def __sub__(self, other: Vec3) -> Vec3:
+        """Resta componente a componente."""
+        return Vec3(self.x - other.x, self.y - other.y, self.z - other.z)
 
-    def __mul__(self, other):
-        """Multiplicación por escalar o por otro Vec3 (componente a componente)."""
-        # Multiplicación por escalar o por otro vector (elemento a elemento)
+    def __neg__(self) -> Vec3:
+        """Negación componente a componente."""
+        return Vec3(-self.x, -self.y, -self.z)
+
+    def __mul__(self, other: Union[Vec3, float, int]) -> Vec3:
+        """Multiplicación por escalar o por otro Vec3 (Hadamard)."""
         if isinstance(other, Vec3):
-            return Vec3(*(self.components * other.components))
-        return Vec3(*(self.components * other))
+            return Vec3(self.x * other.x, self.y * other.y, self.z * other.z)
+        return Vec3(self.x * other, self.y * other, self.z * other)
 
-    def __truediv__(self, scalar):
-        """División por escalar componente a componente. Retorna Vec3."""
-        return Vec3(*(self.components / scalar))
+    def __rmul__(self, scalar: Union[float, int]) -> Vec3:
+        """Multiplicación escalar por la izquierda: ``scalar * vec``."""
+        return Vec3(self.x * scalar, self.y * scalar, self.z * scalar)
+
+    def __truediv__(self, scalar: Union[float, int]) -> Vec3:
+        """División por escalar componente a componente."""
+        inv = 1.0 / scalar
+        return Vec3(self.x * inv, self.y * inv, self.z * inv)
+
+    def __eq__(self, other: object) -> bool:
+        """Igualdad exacta por componentes."""
+        if not isinstance(other, Vec3):
+            return NotImplemented
+        return self.x == other.x and self.y == other.y and self.z == other.z
 
     # --- Operaciones de Álgebra Lineal Clave ---
 
-    def dot(self, other):
-        """
-        Producto punto: v1·v2 = v1.x*v2.x + v1.y*v2.y + v1.z*v2.z
+    def dot(self, other: Vec3) -> float:
+        """Producto punto: ``v1·v2``."""
+        return self.x * other.x + self.y * other.y + self.z * other.z
 
-        Returns:
-            float: Escalar resultante
-        """
-        return np.dot(self.components, other.components)
+    def cross(self, other: Vec3) -> Vec3:
+        """Producto cruz perpendicular a ``self`` y ``other``."""
+        return Vec3(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
 
-    def cross(self, other):
-        """
-        Producto cruz. El resultado es perpendicular a ambos operandos.
+    def length_squared(self) -> float:
+        """Magnitud euclidiana al cuadrado: ``x² + y² + z²``."""
+        return self.x * self.x + self.y * self.y + self.z * self.z
 
-        Returns:
-            Vec3: Vector perpendicular a self y other
-        """
-        return Vec3(*np.cross(self.components, other.components))
+    def length(self) -> float:
+        """Magnitud euclidiana: ``sqrt(x² + y² + z²)``."""
+        return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
 
-    def length(self):
-        """
-        Magnitud euclidiana: sqrt(x² + y² + z²)
-
-        Returns:
-            float: Longitud del vector (siempre ≥ 0)
-        """
-        return np.linalg.norm(self.components)
-
-    def normalize(self):
-        """
-        Vector unitario con la misma dirección (magnitud = 1).
-
-        Returns:
-            Vec3: Vector normalizado, o Vec3(0,0,0) si la magnitud es 0
-        """
+    def normalize(self) -> Vec3:
+        """Vector unitario con la misma dirección, o ``Vec3(0, 0, 0)`` si magnitud es 0."""
         mag = self.length()
-        if mag == 0:
-            return Vec3(0, 0, 0)
-        return self / mag
+        if mag == 0.0:
+            return Vec3(0.0, 0.0, 0.0)
+        inv = 1.0 / mag
+        return Vec3(self.x * inv, self.y * inv, self.z * inv)
 
-    def reflect(self, normal):
-        """
-        Reflexión especular: R = I - 2(I·N)N
+    def reflect(self, normal: Vec3) -> Vec3:
+        """Reflexión especular: ``R = I - 2(I·N)N`` (con ``normal`` unitaria)."""
+        factor = 2.0 * self.dot(normal)
+        return Vec3(
+            self.x - normal.x * factor,
+            self.y - normal.y * factor,
+            self.z - normal.z * factor,
+        )
 
-        Args:
-            normal (Vec3): Normal de la superficie (debe ser unitaria)
-
-        Returns:
-            Vec3: Vector reflejado
-        """
-        return self - normal * (2 * self.dot(normal))
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Vec3({self.x}, {self.y}, {self.z})"

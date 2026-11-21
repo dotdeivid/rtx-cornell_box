@@ -1,43 +1,62 @@
-"""Path tracer core - rendering engine with NEE."""
+"""Path tracer core - motor de rendering Monte Carlo con NEE y Russian Roulette."""
 
 import math
-from typing import List
+import random
+from typing import Protocol, Sequence, Tuple, runtime_checkable
+
 from src.vector import Vec3
 from src.ray import Ray
-from src.geometry import BVHNode, HitRecord
-from src.materials.diffuse import DiffuseMaterial
+from src.geometry.base import Geometry
+from src.geometry.hit_record import HitRecord
+from src.materials.base import Material
 
 
-def calculate_nee(rec: HitRecord, world: BVHNode, lights: List, albedo: Vec3) -> Vec3:
+@runtime_checkable
+class AreaLight(Protocol):
+    """Interfaz esperada para objetos emisores muestreados por NEE."""
+
+    material: Material
+
+    def sample_solid_angle(self, hit_point: Vec3) -> Tuple[Vec3, float]: ...
+
+
+def calculate_nee(
+    rec: HitRecord,
+    world: Geometry,
+    lights: Sequence[AreaLight],
+    albedo: Vec3,
+) -> Vec3:
     """
-    Next Event Estimation - iluminación directa.
+    Next Event Estimation - iluminación directa desde fuentes de luz de área.
 
     Args:
         rec: HitRecord del punto golpeado
-        world: Geometría de la escena
+        world: Geometría de la escena (BVH o primitiva)
         lights: Lista de objetos emisores
-        albedo: Color del material (atenuación devuelta por scatter())
+        albedo: Color del material (atenuación devuelta por ``scatter()``)
 
     Returns:
-        Color de iluminación directa
+        Contribución de iluminación directa
     """
-    direct_light = Vec3(0, 0, 0)
+    direct_light = Vec3(0.0, 0.0, 0.0)
+    shadow_origin = rec.point + rec.normal * 1e-4
 
     for light in lights:
-        # Muestrear dirección hacia la luz
         l_dir, solid_angle = light.sample_solid_angle(rec.point)
-        cos_theta_surface = max(0, l_dir.dot(rec.normal))
+        if solid_angle <= 0.0:
+            continue
 
-        if cos_theta_surface > 0:
-            # Shadow ray
-            shadow_ray = Ray(rec.point + rec.normal * 0.001, l_dir)
-            shadow_hit = world.hit(shadow_ray, 0.001, float("inf"))
+        cos_theta_surface = l_dir.dot(rec.normal)
+        if cos_theta_surface > 0.0:
+            shadow_ray = Ray(shadow_origin, l_dir)
+            shadow_hit = world.hit(shadow_ray, 1e-4, float("inf"))
 
-            # Si golpea la luz (no hay oclusión)
-            if shadow_hit and shadow_hit.obj_ref == light:
+            if shadow_hit is not None and shadow_hit.obj_ref is light:
                 brdf = albedo / math.pi
-                direct_light += (
-                    light.material.emitted() * brdf * cos_theta_surface * solid_angle
+                direct_light = direct_light + (
+                    light.material.emitted()
+                    * brdf
+                    * (cos_theta_surface * solid_angle)
                 )
 
     return direct_light
@@ -45,62 +64,75 @@ def calculate_nee(rec: HitRecord, world: BVHNode, lights: List, albedo: Vec3) ->
 
 def color_ray(
     ray: Ray,
-    world: BVHNode,
-    lights: List,
+    world: Geometry,
+    lights: Sequence[AreaLight],
     depth: int,
     max_depth: int,
-    puede_ver_luz: bool = True,
+    can_see_light: bool = True,
 ) -> Vec3:
     """
-    Path tracing recursivo con NEE usando Material ABC.
+    Path tracing recursivo con NEE y Russian Roulette sin sesgo.
 
     Args:
         ray: Rayo a trazar
         world: Geometría de la escena
-        lights: Fuentes de luz
-        depth: Profundidad actual
-        max_depth: Profundidad máxima
-        puede_ver_luz: Si puede ver emisión directa
+        lights: Fuentes de luz muestreadas por NEE
+        depth: Profundidad restante
+        max_depth: Profundidad inicial (usada para activar Russian Roulette)
+        can_see_light: Si puede sumar emisión directa de luces muestreadas por NEE
 
     Returns:
-        Color del rayo
+        Radiancia estimada para el rayo
     """
     if depth <= 0:
-        return Vec3(0, 0, 0)
+        return Vec3(0.0, 0.0, 0.0)
 
     hit = world.hit(ray, 0.001, float("inf"))
+    if hit is None or hit.material is None:
+        # Cornell Box cerrada - sin cielo/fondo
+        return Vec3(0.0, 0.0, 0.0)
 
-    if hit:
-        # Emisión directa del material
-        emission = hit.material.emitted() if hit.material else Vec3(0, 0, 0)
-        if emission.length() > 0:
-            return emission if puede_ver_luz else Vec3(0, 0, 0)
-
-        # Usar material.scatter() para determinar ray siguiente
-        scattered, attenuation, scattered_ray = hit.material.scatter(ray, hit)
-
-        if not scattered:
-            # Material absorbió el rayo
+    # Emisión directa del material
+    emission = hit.material.emitted()
+    if emission.length_squared() > 0.0:
+        if not hit.front_face:
+            return Vec3(0.0, 0.0, 0.0)
+        # Solo omitir si este emisor ya está siendo muestreado por NEE (en lights)
+        is_sampled_light = any(hit.obj_ref is light for light in lights)
+        if can_see_light or not is_sampled_light:
             return emission
+        return Vec3(0.0, 0.0, 0.0)
 
-        # Para materiales difusos, calcular NEE
-        if isinstance(hit.material, DiffuseMaterial):
-            nee_contribution = calculate_nee(hit, world, lights, attenuation)
-            indirect = color_ray(
-                scattered_ray, world, lights, depth - 1, max_depth, False
-            )
+    scattered, attenuation, scattered_ray = hit.material.scatter(ray, hit)
+    if not scattered or attenuation is None or scattered_ray is None:
+        return Vec3(0.0, 0.0, 0.0)
 
-            # BRDF Lambertiano
-            # Corrección: El modelo de Lambert ya incluye la probabilidad en el scatter.
-            # No multiplicamos por cos_theta ni 2pi porque se cancela con la PDF.
-            return nee_contribution + attenuation * indirect
-        else:
-            # Materiales especulares (metal, dielectric) - no NEE
-            # Corrección: Deben poder ver la luz (True) porque no usan NEE.
-            indirect = color_ray(
-                scattered_ray, world, lights, depth - 1, max_depth, True
-            )
-            return attenuation * indirect
+    uses_nee = hit.material.uses_nee
+    nee_contribution = (
+        calculate_nee(hit, world, lights, attenuation)
+        if uses_nee
+        else Vec3(0.0, 0.0, 0.0)
+    )
 
-    # Cornell Box cerrada - no hay cielo/fondo
-    return Vec3(0, 0, 0)
+    # Russian Roulette a partir del 3er rebote para evitar trabajo en caminos de baja energía
+    bounces = max_depth - depth
+    rr_scale = 1.0
+    if bounces >= 3:
+        survival_prob = max(
+            0.05, min(0.95, max(attenuation.x, attenuation.y, attenuation.z))
+        )
+        if random.random() > survival_prob:
+            return nee_contribution
+        rr_scale = 1.0 / survival_prob
+
+    # Materiales que usan NEE ocultan luces muestreadas en el rebote (can_see_light=False)
+    indirect = color_ray(
+        scattered_ray,
+        world,
+        lights,
+        depth - 1,
+        max_depth,
+        not uses_nee,
+    )
+
+    return nee_contribution + attenuation * indirect * rr_scale

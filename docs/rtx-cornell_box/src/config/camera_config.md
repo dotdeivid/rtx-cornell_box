@@ -14,7 +14,7 @@ Configuración de los parámetros ópticos y de posicionamiento de la cámara vi
 | `lookat` | `Vec3` | `Vec3(278, 278, 278)` | Punto hacia el que apunta la cámara |
 | `vup` | `Vec3` | `Vec3(0, 1, 0)` | Vector "arriba" del mundo |
 | `fov` | `float` | `40.0` | Campo de visión vertical en grados |
-| `aperture` | `float` | `20.0` | Apertura del lente (controla DOF) |
+| `aperture` | `float` | `0.0` | Apertura del lente (controla DOF) |
 | `focus_distance` | `Optional[float]` | `None` | Distancia al plano focal. `None` = auto |
 
 ---
@@ -72,9 +72,9 @@ Internamente se convierte a radianes y se usa: `h = tan(fov/2)`, `viewport_heigh
 Diámetro del círculo de apertura de la lente. Controla la intensidad del efecto de profundidad de campo.
 
 ```
-aperture=0    → Sin DOF (cámara pinhole ideal), todo en foco
+aperture=0    → Sin DOF (cámara pinhole ideal), todo en foco (default)
 aperture=5    → DOF muy sutil
-aperture=20   → DOF moderado (default)
+aperture=20   → DOF moderado (preset DOF)
 aperture=60   → DOF muy pronunciado, bokeh dramático
 ```
 

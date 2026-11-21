@@ -1,15 +1,15 @@
 """Tests para sistema de materiales."""
 
 import pytest
-import math
 from src.vector import Vec3
 from src.ray import Ray
+from src.geometry import HitRecord
 from src.materials import (
     Material,
-    HitRecord,
     DiffuseMaterial,
     MetalMaterial,
     DielectricMaterial,
+    EmissiveMaterial,
 )
 
 
@@ -17,152 +17,132 @@ class TestMaterialBase:
     """Tests para Material ABC."""
 
     def test_cannot_instantiate_abstract(self):
-        """No se puede instanciar Material directamente."""
         with pytest.raises(TypeError):
-            Material()
+            Material()  # type: ignore[abstract]
 
 
 class TestDiffuseMaterial:
     """Tests para DiffuseMaterial."""
 
     def test_creation(self):
-        """Test crear material difuso."""
-        albedo = Vec3(0.8, 0.3, 0.3)
-        mat = DiffuseMaterial(albedo)
-        assert mat.albedo.x == 0.8
-        assert mat.albedo.y == 0.3
-        assert mat.albedo.z == 0.3
+        mat = DiffuseMaterial(Vec3(0.8, 0.3, 0.3))
+        assert mat.albedo == Vec3(0.8, 0.3, 0.3)
 
     def test_scatter(self):
-        """Test dispersión difusa."""
         mat = DiffuseMaterial(Vec3(0.5, 0.5, 0.5))
-
         ray = Ray(Vec3(0, 0, -1), Vec3(0, 0, 1))
         hit = HitRecord(t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 0, -1))
 
         scattered, attenuation, scattered_ray = mat.scatter(ray, hit)
-
         assert scattered is True
-        assert attenuation is not None
+        assert attenuation == Vec3(0.5, 0.5, 0.5)
         assert scattered_ray is not None
-        assert attenuation.x == 0.5
+        assert scattered_ray.direction.dot(hit.normal) >= 0.0
 
     def test_no_emission(self):
-        """Material difuso no emite luz."""
         mat = DiffuseMaterial(Vec3(1, 1, 1))
-        emission = mat.emitted()
-        assert emission.x == 0
-        assert emission.y == 0
-        assert emission.z == 0
+        assert mat.emitted() == Vec3(0, 0, 0)
+        assert mat.uses_nee is True
 
 
 class TestMetalMaterial:
     """Tests para MetalMaterial."""
 
-    def test_creation(self):
-        """Test crear material metálico."""
-        mat = MetalMaterial(Vec3(0.8, 0.8, 0.8), fuzz=0.3)
-        assert mat.fuzz == 0.3
-
-    def test_fuzz_clamped(self):
-        """Fuzz se clampea a [0, 1]."""
-        mat = MetalMaterial(Vec3(1, 1, 1), fuzz=2.0)
-        assert mat.fuzz == 1.0
+    def test_creation_and_fuzz_clamping(self):
+        assert MetalMaterial(Vec3(0.8, 0.8, 0.8), fuzz=0.3).fuzz == 0.3
+        assert MetalMaterial(Vec3(1, 1, 1), fuzz=2.0).fuzz == 1.0
+        assert MetalMaterial(Vec3(1, 1, 1), fuzz=-0.5).fuzz == 0.0
 
     def test_perfect_reflection(self):
-        """Test reflexión perfecta (sin fuzz)."""
         mat = MetalMaterial(Vec3(1, 1, 1), fuzz=0.0)
-
-        # Rayo incidente vertical hacia abajo
-        ray = Ray(Vec3(0, 1, 0), Vec3(0, -1, 0))
-        hit = HitRecord(
-            t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 1, 0)  # Normal hacia arriba
-        )
+        ray = Ray(Vec3(0, 1, 0), Vec3(1, -1, 0))
+        hit = HitRecord(t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 1, 0))
 
         scattered, attenuation, scattered_ray = mat.scatter(ray, hit)
-
         assert scattered is True
-        # El rayo debe reflejarse hacia arriba
+        assert attenuation == Vec3(1, 1, 1)
+        assert scattered_ray is not None
         assert scattered_ray.direction.y > 0
 
+    def test_absorbs_when_ray_below_surface(self):
+        mat = MetalMaterial(Vec3(1, 1, 1), fuzz=0.0)
+        # Rayo saliendo desde atrás contra normal en la misma dirección
+        ray = Ray(Vec3(0, -1, 0), Vec3(0, 1, 0))
+        hit = HitRecord(t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 1, 0))
+        scattered, attenuation, scattered_ray = mat.scatter(ray, hit)
+        assert scattered is False
+        assert attenuation is None
+        assert scattered_ray is None
+
     def test_no_emission(self):
-        """Material metálico no emite luz."""
         mat = MetalMaterial(Vec3(1, 1, 1))
-        emission = mat.emitted()
-        assert emission.length() == 0
+        assert mat.emitted().length() == 0.0
+        assert mat.uses_nee is False
 
 
 class TestDielectricMaterial:
     """Tests para DielectricMaterial."""
 
-    def test_creation(self):
-        """Test crear material dieléctrico."""
+    def test_creation_and_validation(self):
+        assert DielectricMaterial(ior=1.5).ior == 1.5
+        assert DielectricMaterial(ior=1.33).ior == 1.33
+        with pytest.raises(ValueError):
+            DielectricMaterial(ior=0.0)
+        with pytest.raises(ValueError):
+            DielectricMaterial(ior=-1.5)
+
+    def test_scatter_returns_white_attenuation(self):
         mat = DielectricMaterial(ior=1.5)
-        assert mat.ior == 1.5
-
-    def test_glass(self):
-        """Test vidrio (ior=1.5)."""
-        mat = DielectricMaterial(ior=1.5)
-        assert mat.ior == 1.5
-
-    def test_water(self):
-        """Test agua (ior=1.33)."""
-        mat = DielectricMaterial(ior=1.33)
-        assert mat.ior == 1.33
-
-    def test_scatter_always_returns_white(self):
-        """Vidrio no atenúa color (retorna blanco)."""
-        mat = DielectricMaterial(ior=1.5)
-
         ray = Ray(Vec3(0, 1, 0), Vec3(0, -1, 0))
         hit = HitRecord(t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 1, 0))
 
         scattered, attenuation, scattered_ray = mat.scatter(ray, hit)
-
         assert scattered is True
-        assert attenuation is not None
-        # Vidrio no atenúa
-        assert attenuation.x == 1.0
-        assert attenuation.y == 1.0
-        assert attenuation.z == 1.0
+        assert attenuation == Vec3(1.0, 1.0, 1.0)
+        assert scattered_ray is not None
 
-    def test_reflectance_at_grazing_angle(self):
-        """Test reflectancia de Fresnel en ángulo rasante."""
-        # A ángulo rasante (cosine ≈ 0), reflectancia debe ser alta
-        reflectance = DielectricMaterial._reflectance(0.0, 1.5)
-        assert reflectance > 0.9  # Alta probabilidad de reflexión
+    def test_total_internal_reflection(self):
+        """Saliendo de vidrio (ior=1.5) a ángulo mayor al crítico (~41.8°) siempre refleja."""
+        mat = DielectricMaterial(ior=1.5)
+        # Rayo saliendo a ~60° respecto a la normal interior (0, -1, 0)
+        ray = Ray(Vec3(0, 0, 0), Vec3(0.866, 0.5, 0.0))
+        # front_face=False con normal ya orientada hacia adentro (0, -1, 0)
+        hit = HitRecord(
+            t=1.0,
+            point=Vec3(0, 1, 0),
+            normal=Vec3(0, -1, 0),
+            front_face=False,
+        )
+        for _ in range(10):
+            scattered, _, scattered_ray = mat.scatter(ray, hit)
+            assert scattered is True
+            assert scattered_ray is not None
+            # Reflejado hacia adentro (y < 0)
+            assert scattered_ray.direction.y < 0.0
 
-    def test_reflectance_at_normal_incidence(self):
-        """Test reflectancia de Fresnel en incidencia normal."""
-        # En incidencia normal (cosine = 1), reflectancia es mínima
-        reflectance = DielectricMaterial._reflectance(1.0, 1.5)
-        assert reflectance < 0.1  # Baja probabilidad de reflexión
+    def test_reflectance_bounds(self):
+        assert DielectricMaterial._reflectance(0.0, 1.5) > 0.9
+        assert DielectricMaterial._reflectance(1.0, 1.5) < 0.1
 
     def test_no_emission(self):
-        """Material dieléctrico no emite luz."""
         mat = DielectricMaterial(ior=1.5)
-        emission = mat.emitted()
-        assert emission.length() == 0
+        assert mat.emitted().length() == 0.0
+        assert mat.uses_nee is False
 
 
-class TestMaterialsIntegration:
-    """Tests de integración entre materiales."""
+class TestEmissiveMaterial:
+    """Tests para EmissiveMaterial."""
 
-    def test_different_materials_different_behavior(self):
-        """Cada material se comporta diferente."""
-        diffuse = DiffuseMaterial(Vec3(0.5, 0.5, 0.5))
-        metal = MetalMaterial(Vec3(0.8, 0.8, 0.8))
-        glass = DielectricMaterial(ior=1.5)
+    def test_emits_and_does_not_scatter(self):
+        mat = EmissiveMaterial(Vec3(15, 15, 15))
+        assert mat.emitted() == Vec3(15, 15, 15)
 
-        # Todos no emiten
-        assert diffuse.emitted().length() == 0
-        assert metal.emitted().length() == 0
-        assert glass.emitted().length() == 0
-
-        # Pero tienen diferentes propiedades
-        assert hasattr(metal, "fuzz")
-        assert hasattr(glass, "ior")
-        assert hasattr(diffuse, "albedo")
+        ray = Ray(Vec3(0, 0, -1), Vec3(0, 0, 1))
+        hit = HitRecord(t=1.0, point=Vec3(0, 0, 0), normal=Vec3(0, 0, -1))
+        scattered, attenuation, scattered_ray = mat.scatter(ray, hit)
+        assert scattered is False
+        assert attenuation is None
+        assert scattered_ray is None
 
 
 if __name__ == "__main__":
